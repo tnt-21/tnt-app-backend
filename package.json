@@ -1,0 +1,47 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Complete pet care platform backend API",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/**/*.js",
+    "lint:fix": "eslint src/**/*.js --fix",
+    "format": "prettier --write \"**/*.{js,json,md}\"",
+    "db:test": "node -e \"require('./src/config/database').testConnection()\"",
+    "db:migrate": "node scripts/runMigrations.js",
+    "db:seed": "node scripts/seedDatabase.js",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "db:reset": "node scripts/resetDatabase.js"
+  },
+  "keywords": [
+    "pet-care",
+    "api",
+    "nodejs",
+    "express",
+    "postgresql",
+    "neondb"
+  ],
+  "author": "Tails & Tales",
+  "license": "MIT",
+  "devDependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "nodemon": "^3.1.11",
+    "pg": "^8.16.3"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dayjs": "^1.11.19",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1",
+    "uuid": "^13.0.0"
+  }
+}
