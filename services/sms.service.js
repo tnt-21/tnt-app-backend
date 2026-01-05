@@ -23,11 +23,11 @@ class SMSService {
   /**
    * Send OTP via SMS
    */
-  async sendOTP(phone, otp) {
+  async sendOTP(phone, otp, purpose='general') {
     try {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`📱 [DEV MODE] OTP for ${phone}: ${otp}`);
-        return { success: true, provider: 'dev-console' };
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`[DEV OTP] ${purpose} OTP for ${phone}: ${otp}`);
+        return { otp, purpose };
       }
 
       if (this.provider === 'msg91') {

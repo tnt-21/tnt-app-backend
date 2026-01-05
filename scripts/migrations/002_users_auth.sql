@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS otp_verifications (
     otp_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES users(user_id),
     phone VARCHAR(15) NOT NULL,
-    otp VARCHAR(6) NOT NULL,
+    otp VARCHAR(255) NOT NULL,
     purpose VARCHAR(30) DEFAULT 'login',
     expires_at TIMESTAMP NOT NULL,
     verified BOOLEAN DEFAULT FALSE,
@@ -39,14 +39,17 @@ CREATE TABLE IF NOT EXISTS otp_verifications (
     attempts INT DEFAULT 0,
     max_attempts INT DEFAULT 3,
     ip_address VARCHAR(45),
+    metadata JSONB,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_otp_phone_created ON otp_verifications(phone, created_at);
 CREATE INDEX IF NOT EXISTS idx_otp_expires ON otp_verifications(expires_at);
+CREATE INDEX IF NOT EXISTS idx_otp_metadata ON otp_verifications USING GIN (metadata);
 
 COMMENT ON TABLE otp_verifications IS 'OTP verification for authentication';
 COMMENT ON COLUMN otp_verifications.purpose IS 'login, registration, password_reset';
+COMMENT ON COLUMN otp_verifications.metadata IS 'Additional context (e.g., new_phone, new_email for update operations)';
 
 -- User Addresses
 CREATE TABLE IF NOT EXISTS user_addresses (

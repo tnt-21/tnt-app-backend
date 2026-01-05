@@ -46,7 +46,8 @@ class AuthService {
         success: true,
         message: 'OTP sent successfully',
         expiresIn: authConfig.otp.expiryMinutes * 60, // seconds
-        isNewUser: !userId
+        isNewUser: !userId,
+        otp // temporary as we do not have real SMS sending in dev
       };
     } catch (error) {
       console.error('Send OTP error:', error);

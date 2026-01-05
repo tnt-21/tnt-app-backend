@@ -73,4 +73,33 @@ class ResponseUtil {
 	}
 }
 
+// Custom error class
+class AppError extends Error {
+	constructor(message, statusCode, errorCode = null) {
+		super(message);
+		this.statusCode = statusCode;
+		this.errorCode = errorCode;
+		this.isOperational = true;
+		Error.captureStackTrace(this, this.constructor);
+	}
+}
+
+// Export both the class and standalone functions for backward compatibility
 module.exports = ResponseUtil;
+
+// Also export standalone functions that your controllers expect
+module.exports.successResponse = (res, data = null, message = 'Success', statusCode = 200) => {
+	return ResponseUtil.success(res, data, message, statusCode);
+};
+
+module.exports.errorResponse = (res, message, statusCode = 500, errorCode = null, errors = null) => {
+	return res.status(statusCode).json({
+		success: false,
+		message,
+		error_code: errorCode,
+		errors,
+		timestamp: new Date().toISOString()
+	});
+};
+
+module.exports.AppError = AppError;

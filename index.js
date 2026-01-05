@@ -8,12 +8,14 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 
 // Import config
 const { testConnection, closePool } = require('./config/database');
 
 // Import routes
 const authRoutes = require('./routes/v1/auth.routes');
+const userRoutes = require('./routes/v1/user.routes'); // NEW: Import user routes
 
 // Import error handler
 const { errorHandler } = require('./middlewares/error.middleware');
@@ -38,21 +40,30 @@ if (ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Rate limiting
+// NEW: Serve static files for uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Rate limiting - General limiter for non-authenticated routes
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: { success: false, message: 'Too many requests' }
+  message: { success: false, message: 'Too many requests' },
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
+// Auth-specific rate limiter
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { success: false, message: 'Too many auth attempts' },
-  skipSuccessfulRequests: true
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
-app.use('/api/', generalLimiter);
+// Apply general limiter only to public routes
+app.use('/', generalLimiter);
 
 // Routes
 app.get('/', (req, res) => {
@@ -60,7 +71,11 @@ app.get('/', (req, res) => {
     success: true,
     message: '🐾 Tails & Tales API',
     version: API_VERSION,
-    endpoints: { health: '/health', auth: `/api/${API_VERSION}/auth` }
+    endpoints: { 
+      health: '/health', 
+      auth: `/api/${API_VERSION}/auth`,
+      users: `/api/${API_VERSION}/users` // NEW: Add users endpoint
+    }
   });
 });
 
@@ -85,6 +100,7 @@ app.get('/health', async (req, res) => {
 
 // API Routes
 app.use(`/api/${API_VERSION}/auth`, authLimiter, authRoutes);
+app.use(`/api/${API_VERSION}/users`, userRoutes); // NEW: Mount user routes (rate limiting is per-route)
 
 // 404 Handler
 app.use((req, res) => {

@@ -1,0 +1,4 @@
+things for temporary testing
+
+1. im returning the value of generated otp in send-otp route
+2. for now access token limit = 7d, later change to 15m, call refresh-token from client side later
