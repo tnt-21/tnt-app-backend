@@ -16,6 +16,10 @@ const { testConnection, closePool } = require('./config/database');
 // Import routes
 const authRoutes = require('./routes/v1/auth.routes');
 const userRoutes = require('./routes/v1/user.routes'); // NEW: Import user routes
+const petRoutes = require('./routes/v1/pet.routes'); // Import pet routes
+
+// Import cron jobs
+const { initPetLifeStageJob } = require('./cron/pet.cron');
 
 // Import error handler
 const { errorHandler } = require('./middlewares/error.middleware');
@@ -74,7 +78,8 @@ app.get('/', (req, res) => {
     endpoints: { 
       health: '/health', 
       auth: `/api/${API_VERSION}/auth`,
-      users: `/api/${API_VERSION}/users` // NEW: Add users endpoint
+      users: `/api/${API_VERSION}/users`, // NEW: Add users endpoint
+      pets: `/api/${API_VERSION}/pets`
     }
   });
 });
@@ -101,6 +106,7 @@ app.get('/health', async (req, res) => {
 // API Routes
 app.use(`/api/${API_VERSION}/auth`, authLimiter, authRoutes);
 app.use(`/api/${API_VERSION}/users`, userRoutes); // NEW: Mount user routes (rate limiting is per-route)
+app.use(`/api/${API_VERSION}/pets`, petRoutes);
 
 // 404 Handler
 app.use((req, res) => {
@@ -121,6 +127,9 @@ async function startServer() {
   try {
     console.log('🔍 Testing database connection...');
     await testConnection();
+    
+    // Initialize Cron Jobs
+    initPetLifeStageJob();
     
     server = app.listen(PORT, () => {
       console.log(`

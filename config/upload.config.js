@@ -5,5 +5,9 @@ module.exports = {
     width: 512,
     height: 512,
   },
+  petImageSize: {
+    width: 800,
+    height: 800,
+  },
   quality: 85,
 };

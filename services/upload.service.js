@@ -2,22 +2,29 @@ const sharp = require("sharp");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
 const fs = require("fs").promises;
+const uploadConfig = require("../config/upload.config");
 
 class UploadService {
   constructor() {
     // You can configure this for S3/CloudFront later
     this.uploadDir = path.join(__dirname, "..", "uploads", "profile-photos");
+    this.petUploadDir = path.join(__dirname, "..", "uploads", "pet-photos");
+    
     this.baseUrl =
       process.env.CDN_BASE_URL ||
       "http://localhost:3000/uploads/profile-photos";
+    this.petBaseUrl =
+      process.env.PET_CDN_BASE_URL ||
+      "http://localhost:3000/uploads/pet-photos";
 
-    // Ensure upload directory exists
+    // Ensure upload directories exist
     this.ensureUploadDir();
   }
 
   async ensureUploadDir() {
     try {
       await fs.mkdir(this.uploadDir, { recursive: true });
+      await fs.mkdir(this.petUploadDir, { recursive: true });
     } catch (error) {
       console.error("Error creating upload directory:", error);
     }
@@ -31,11 +38,11 @@ class UploadService {
 
       // Process image with sharp (resize, compress)
       await sharp(file.buffer)
-        .resize(512, 512, {
+        .resize(uploadConfig.imageSize.width, uploadConfig.imageSize.height, {
           fit: "cover",
           position: "center",
         })
-        .jpeg({ quality: 85 })
+        .jpeg({ quality: uploadConfig.quality })
         .toFile(filepath);
 
       // Return public URL
@@ -46,6 +53,31 @@ class UploadService {
       throw new Error("Failed to upload profile photo");
     }
   }
+
+  async uploadPetPhoto(file, petId) {
+    try {
+      // Generate unique filename
+      const filename = `pet-${petId}-${uuidv4()}.jpg`;
+      const filepath = path.join(this.petUploadDir, filename);
+
+      // Process image with sharp (resize, compress)
+      await sharp(file.buffer)
+        .resize(uploadConfig.petImageSize.width, uploadConfig.petImageSize.height, {
+          fit: "cover",
+          position: "center",
+        })
+        .jpeg({ quality: uploadConfig.quality })
+        .toFile(filepath);
+
+      // Return public URL
+      const photoUrl = `${this.petBaseUrl}/${filename}`;
+      return photoUrl;
+    } catch (error) {
+      console.error("Error uploading pet photo:", error);
+      throw new Error("Failed to upload pet photo");
+    }
+  }
+
   async deleteProfilePhoto(photoUrl) {
     try {
       // Extract filename from URL
@@ -56,6 +88,21 @@ class UploadService {
       return true;
     } catch (error) {
       console.error("Error deleting profile photo:", error);
+      // Don't throw error, just log
+      return false;
+    }
+  }
+
+  async deletePetPhoto(photoUrl) {
+    try {
+      // Extract filename from URL
+      const filename = photoUrl.split("/").pop();
+      const filepath = path.join(this.petUploadDir, filename);
+      // Delete file
+      await fs.unlink(filepath);
+      return true;
+    } catch (error) {
+      console.error("Error deleting pet photo:", error);
       // Don't throw error, just log
       return false;
     }
