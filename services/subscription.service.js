@@ -1,6 +1,7 @@
 const { pool } = require("../config/database");
 const { AppError } = require("../utils/response.util");
 const { v4: uuidv4 } = require("uuid");
+const paymentService = require("./payment.service");
 
 class SubscriptionService {
   // ==================== BROWSE TIERS ====================
@@ -34,15 +35,16 @@ class SubscriptionService {
             bc.months,
             bc.discount_percentage,
             CASE 
-              WHEN bc.cycle_code = 'monthly' THEN 999.00
-              WHEN bc.cycle_code = 'annual' THEN 9999.00
+              WHEN bc.cycle_code = 'monthly' THEN t.base_price
+              WHEN bc.cycle_code = 'annual' THEN t.base_price * 12
             END as base_price
           FROM billing_cycles_ref bc
+          JOIN subscription_tiers_ref t ON t.tier_id = $1
           WHERE bc.cycle_code IN ('monthly', 'annual')
           ORDER BY bc.months
         `;
 
-        const pricing = await pool.query(pricingQuery);
+        const pricing = await pool.query(pricingQuery, [tier.tier_id]);
 
         return {
           ...tier,
@@ -108,13 +110,15 @@ class SubscriptionService {
         bc.months,
         bc.discount_percentage,
         CASE 
-          WHEN bc.cycle_code = 'monthly' THEN 999.00
-          WHEN bc.cycle_code = 'annual' THEN 9999.00
+          WHEN bc.cycle_code = 'monthly' THEN t.base_price
+          WHEN bc.cycle_code = 'annual' THEN t.base_price * 12
         END as base_price
       FROM billing_cycles_ref bc
+      CROSS JOIN subscription_tiers_ref t
+      WHERE t.tier_id = $1
     `;
 
-    const pricing = await pool.query(pricingQuery);
+    const pricing = await pool.query(pricingQuery, [tierId]);
 
     tierData.pricing_options = pricing.rows.map(p => ({
       ...p,
@@ -152,6 +156,59 @@ class SubscriptionService {
     }
 
     return tierData;
+  }
+
+  // ==================== ADMIN MANAGEMENT ====================
+
+  async updateTier(tierId, updates) {
+    const allowedFields = ['base_price', 'tier_name', 'tier_description', 'marketing_tagline', 'is_active'];
+    const fields = Object.keys(updates).filter(key => allowedFields.includes(key));
+    
+    if (fields.length === 0) {
+      throw new AppError('No valid fields to update', 400, 'INVALID_UPDATE_FIELDS');
+    }
+
+    const setClause = fields.map((key, index) => `${key} = $${index + 2}`).join(', ');
+    const values = [tierId, ...fields.map(key => updates[key])];
+
+    const query = `
+      UPDATE subscription_tiers_ref 
+      SET ${setClause}
+      WHERE tier_id = $1
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, values);
+
+    if (result.rows.length === 0) {
+      throw new AppError('Tier not found', 404, 'TIER_NOT_FOUND');
+    }
+
+    return result.rows[0];
+  }
+
+  async updateTierConfig(tierId, speciesId, lifeStageId, categoryId, config) {
+    const { quota_monthly, quota_annual, is_included } = config;
+    
+    const query = `
+      INSERT INTO subscription_tiers_config (
+        tier_id, species_id, life_stage_id, category_id, 
+        quota_monthly, quota_annual, is_included
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (tier_id, species_id, life_stage_id, category_id)
+      DO UPDATE SET
+        quota_monthly = EXCLUDED.quota_monthly,
+        quota_annual = EXCLUDED.quota_annual,
+        is_included = EXCLUDED.is_included
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, [
+      tierId, speciesId, lifeStageId, categoryId,
+      quota_monthly, quota_annual, is_included
+    ]);
+
+    return result.rows[0];
   }
 
   // ==================== USER SUBSCRIPTIONS ====================
@@ -385,6 +442,25 @@ class SubscriptionService {
         ) VALUES ($1, 'created', $2, $3, $4, $5, $6)`,
         [subscriptionId, tier_id, billing_cycle_id, pricing.final_price, userId, startDate]
       );
+
+      // GENERATE INVOICE
+      await paymentService.createInvoice({
+        user_id: userId,
+        subscription_id: subscriptionId,
+        invoice_type: 'subscription',
+        line_items: [
+          {
+            item_type: 'subscription',
+            description: `${pricing.tier_name} Plan - ${cycle.cycle_name}`,
+            quantity: 1,
+            unit_price: parseFloat(pricing.base_price),
+            tax_applicable: true
+          }
+        ],
+        tax_percentage: 18,
+        discount_amount: parseFloat(pricing.discount_amount),
+        due_date: new Date() // Due immediately
+      }, client);
 
       await client.query("COMMIT");
 
@@ -925,16 +1001,22 @@ class SubscriptionService {
 
     const cycle = billingCycle.rows[0];
 
-    // Simplified base pricing (should be from pricing_rules table)
-    let basePrice = 0;
-    if (tierId === 1) basePrice = 999.00; // Basic
-    else if (tierId === 2) basePrice = 1999.00; // Plus
-    else if (tierId === 3) basePrice = 4999.00; // Eternal
+  // Get base price from DB
+  const tierResult = await pool.query(
+    "SELECT base_price FROM subscription_tiers_ref WHERE tier_id = $1",
+    [tierId]
+  );
 
-    // Apply billing cycle multiplier
-    if (cycle.months === 12) {
-      basePrice = basePrice * 12;
-    }
+  if (tierResult.rows.length === 0) {
+    throw new AppError("Invalid tier", 400, "INVALID_TIER");
+  }
+
+  let basePrice = parseFloat(tierResult.rows[0].base_price);
+
+  // Apply billing cycle multiplier
+  if (cycle.months === 12) {
+    basePrice = basePrice * 12;
+  }
 
     // Apply billing cycle discount
     const cycleDiscount = basePrice * (cycle.discount_percentage / 100);

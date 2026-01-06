@@ -37,6 +37,7 @@
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
+    "crypto": "^1.0.1",
     "dayjs": "^1.11.19",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
@@ -45,7 +46,9 @@
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
+    "razorpay": "^2.9.6",
     "sharp": "^0.34.5",
+    "stripe": "^20.1.0",
     "uuid": "^13.0.0"
   }
 }

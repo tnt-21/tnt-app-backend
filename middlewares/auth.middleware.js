@@ -71,4 +71,13 @@ const optionalAuth = async (req, res, next) => {
   }
 };
 
-module.exports = { authenticate, optionalAuth };
+const authorize = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return ResponseUtil.forbidden(res, 'Access denied: Insufficient permissions');
+    }
+    next();
+  };
+};
+
+module.exports = { authenticate, optionalAuth, authorize };

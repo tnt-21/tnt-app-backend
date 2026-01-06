@@ -23,10 +23,10 @@ INSERT INTO life_stages_ref (species_id, life_stage_code, life_stage_name, min_a
 (2, 'senior_cat', 'Senior (10+ years)', 121, NULL, 'Senior cats need gentle care');
 
 -- Subscription Tiers
-INSERT INTO subscription_tiers_ref (tier_code, tier_name, tier_description, marketing_tagline, display_order, color_hex, is_active) VALUES
-('basic', 'Basic Care', 'Essential pet care services', 'Start your journey', 1, '#3B82F6', true),
-('plus', 'Plus Care', 'Enhanced protection and perks', 'Step up the care', 2, '#8B5CF6', true),
-('eternal', 'Eternal Care', 'Premium all-inclusive care', 'The ultimate love', 3, '#F59E0B', true)
+INSERT INTO subscription_tiers_ref (tier_code, tier_name, tier_description, marketing_tagline, base_price, display_order, color_hex, is_active) VALUES
+('basic', 'Basic Care', 'Essential pet care services', 'Start your journey', 499.00, 1, '#3B82F6', true),
+('plus', 'Plus Care', 'Enhanced protection and perks', 'Step up the care', 1999.00, 2, '#8B5CF6', true),
+('eternal', 'Eternal Care', 'Premium all-inclusive care', 'The ultimate love', 3999.00, 3, '#F59E0B', true)
 ON CONFLICT (tier_code) DO NOTHING;
 
 -- Service Categories

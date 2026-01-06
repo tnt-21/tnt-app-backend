@@ -14,6 +14,9 @@ const rateLimitMiddleware = (maxRequests = 100, windowMinutes = 15) => {
     },
     standardHeaders: true,
     legacyHeaders: false,
+    validate: {
+      trustProxy: false
+    },
     keyGenerator: (req) => {
       // Use user_id if authenticated, otherwise IP
       return req.user?.user_id || req.ip;

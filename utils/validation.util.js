@@ -533,6 +533,312 @@ const calculatePriceSchema = Joi.object({
 });
 
 
+// ==================== PAYMENT METHOD SCHEMAS ====================
+
+const addPaymentMethodSchema = Joi.object({
+  method_type: Joi.string()
+    .valid('card', 'upi', 'netbanking', 'wallet')
+    .required()
+    .messages({
+      'any.only': 'Invalid payment method type',
+      'any.required': 'Payment method type is required'
+    }),
+  
+  provider: Joi.string()
+    .valid('razorpay', 'stripe', 'paytm', 'phonepe', 'gpay')
+    .required()
+    .messages({
+      'any.only': 'Invalid payment provider',
+      'any.required': 'Payment provider is required'
+    }),
+  
+  token: Joi.string()
+    .max(500)
+    .required()
+    .messages({
+      'string.max': 'Token too long',
+      'any.required': 'Payment token is required'
+    }),
+  
+  // Card-specific fields (required if method_type is 'card')
+  card_brand: Joi.when('method_type', {
+    is: 'card',
+    then: Joi.string().valid('visa', 'mastercard', 'rupay', 'amex').required(),
+    otherwise: Joi.string().optional().allow(null, '')
+  }),
+  
+  last_four: Joi.when('method_type', {
+    is: 'card',
+    then: Joi.string().length(4).pattern(/^\d+$/).required(),
+    otherwise: Joi.string().optional().allow(null, '')
+  }),
+  
+  expiry_month: Joi.when('method_type', {
+    is: 'card',
+    then: Joi.string().length(2).pattern(/^(0[1-9]|1[0-2])$/).required(),
+    otherwise: Joi.string().optional().allow(null, '')
+  }),
+  
+  expiry_year: Joi.when('method_type', {
+    is: 'card',
+    then: Joi.string().length(4).pattern(/^\d{4}$/).required(),
+    otherwise: Joi.string().optional().allow(null, '')
+  }),
+  
+  cardholder_name: Joi.when('method_type', {
+    is: 'card',
+    then: Joi.string().min(2).max(255).required(),
+    otherwise: Joi.string().optional().allow(null, '')
+  }),
+  
+  billing_address_id: Joi.string().uuid().optional().allow(null),
+  
+  is_default: Joi.boolean().optional(),
+  
+  is_verified: Joi.boolean().optional()
+});
+
+// ==================== PAYMENT PROCESSING SCHEMAS ====================
+
+const processPaymentSchema = Joi.object({
+  invoice_id: Joi.string()
+    .uuid()
+    .required()
+    .messages({
+      'string.guid': 'Invalid invoice ID format',
+      'any.required': 'Invoice ID is required'
+    }),
+  
+  payment_method_id: Joi.string()
+    .uuid()
+    .optional()
+    .allow(null)
+    .messages({
+      'string.guid': 'Invalid payment method ID format'
+    }),
+  
+  payment_gateway: Joi.string()
+    .valid('razorpay', 'stripe', 'paytm')
+    .default('razorpay')
+    .messages({
+      'any.only': 'Invalid payment gateway'
+    }),
+  
+  payment_method_used: Joi.string()
+    .valid('card', 'upi', 'netbanking', 'wallet')
+    .optional()
+    .messages({
+      'any.only': 'Invalid payment method'
+    }),
+  
+  // Razorpay-specific fields
+  razorpay_payment_id: Joi.string().optional(),
+  razorpay_order_id: Joi.string().optional(),
+  razorpay_signature: Joi.string().optional()
+});
+
+const verifyPaymentSchema = Joi.object({
+  order_id: Joi.string()
+    .required()
+    .messages({
+      'any.required': 'Order ID is required'
+    }),
+  
+  payment_id: Joi.string()
+    .required()
+    .messages({
+      'any.required': 'Payment ID is required'
+    }),
+  
+  signature: Joi.string()
+    .required()
+    .messages({
+      'any.required': 'Payment signature is required'
+    })
+});
+
+// ==================== REFUND SCHEMAS ====================
+
+const requestRefundSchema = Joi.object({
+  payment_id: Joi.string()
+    .uuid()
+    .required()
+    .messages({
+      'string.guid': 'Invalid payment ID format',
+      'any.required': 'Payment ID is required'
+    }),
+  
+  booking_id: Joi.string()
+    .uuid()
+    .optional()
+    .allow(null)
+    .messages({
+      'string.guid': 'Invalid booking ID format'
+    }),
+  
+  refund_amount: Joi.number()
+    .positive()
+    .precision(2)
+    .required()
+    .messages({
+      'number.positive': 'Refund amount must be positive',
+      'any.required': 'Refund amount is required'
+    }),
+  
+  refund_type: Joi.string()
+    .valid('full', 'partial', 'cancellation', 'error')
+    .default('full')
+    .messages({
+      'any.only': 'Invalid refund type'
+    }),
+  
+  reason: Joi.string()
+    .min(10)
+    .max(255)
+    .required()
+    .messages({
+      'string.min': 'Reason must be at least 10 characters',
+      'string.max': 'Reason must not exceed 255 characters',
+      'any.required': 'Refund reason is required'
+    }),
+  
+  detailed_reason: Joi.string()
+    .max(1000)
+    .optional()
+    .allow(null, '')
+    .messages({
+      'string.max': 'Detailed reason must not exceed 1000 characters'
+    })
+});
+
+// ==================== INVOICE CREATION SCHEMA ====================
+
+const createInvoiceSchema = Joi.object({
+  user_id: Joi.string()
+    .uuid()
+    .optional()
+    .messages({
+      'string.guid': 'Invalid user ID format'
+    }),
+  
+  subscription_id: Joi.string()
+    .uuid()
+    .optional()
+    .allow(null)
+    .messages({
+      'string.guid': 'Invalid subscription ID format'
+    }),
+  
+  booking_id: Joi.string()
+    .uuid()
+    .optional()
+    .allow(null)
+    .messages({
+      'string.guid': 'Invalid booking ID format'
+    }),
+  
+  invoice_type: Joi.string()
+    .valid('subscription', 'service', 'addon', 'refund')
+    .required()
+    .messages({
+      'any.only': 'Invalid invoice type',
+      'any.required': 'Invoice type is required'
+    }),
+  
+  line_items: Joi.array()
+    .items(
+      Joi.object({
+        item_type: Joi.string()
+          .valid('subscription', 'service', 'addon', 'tax', 'discount')
+          .required(),
+        description: Joi.string().min(1).max(255).required(),
+        quantity: Joi.number().integer().positive().default(1),
+        unit_price: Joi.number().positive().precision(2).required(),
+        tax_applicable: Joi.boolean().default(true)
+      })
+    )
+    .min(1)
+    .required()
+    .messages({
+      'array.min': 'At least one line item is required',
+      'any.required': 'Line items are required'
+    }),
+  
+  tax_percentage: Joi.number()
+    .min(0)
+    .max(100)
+    .precision(2)
+    .default(18)
+    .messages({
+      'number.min': 'Tax percentage cannot be negative',
+      'number.max': 'Tax percentage cannot exceed 100'
+    }),
+  
+  discount_percentage: Joi.number()
+    .min(0)
+    .max(100)
+    .precision(2)
+    .default(0)
+    .messages({
+      'number.min': 'Discount percentage cannot be negative',
+      'number.max': 'Discount percentage cannot exceed 100'
+    }),
+  
+  discount_amount: Joi.number()
+    .min(0)
+    .precision(2)
+    .optional()
+    .messages({
+      'number.min': 'Discount amount cannot be negative'
+    }),
+  
+  due_date: Joi.date()
+    .min('now')
+    .optional()
+    .messages({
+      'date.min': 'Due date cannot be in the past'
+    }),
+  
+  notes: Joi.string()
+    .max(1000)
+    .optional()
+    .allow(null, '')
+    .messages({
+      'string.max': 'Notes must not exceed 1000 characters'
+    })
+});
+
+// ==================== PROMO CODE VALIDATION ====================
+
+const applyPromoCodeSchema = Joi.object({
+  promo_code: Joi.string()
+    .uppercase()
+    .max(50)
+    .required()
+    .messages({
+      'string.max': 'Promo code too long',
+      'any.required': 'Promo code is required'
+    }),
+  
+  invoice_id: Joi.string()
+    .uuid()
+    .optional()
+    .allow(null)
+    .messages({
+      'string.guid': 'Invalid invoice ID format'
+    }),
+  
+  amount: Joi.number()
+    .positive()
+    .precision(2)
+    .optional()
+    .messages({
+      'number.positive': 'Amount must be positive'
+    })
+});
+
+
+
 module.exports = {
   updateProfileSchema,
   createAddressSchema,
@@ -575,5 +881,13 @@ module.exports = {
   cancelSubscriptionSchema,
   toggleAutoRenewalSchema,
   validatePromoCodeSchema,
-  calculatePriceSchema
+  calculatePriceSchema,
+
+    // Payment schemas
+    addPaymentMethodSchema,
+    processPaymentSchema,
+    verifyPaymentSchema,
+    requestRefundSchema,
+    createInvoiceSchema,
+    applyPromoCodeSchema
 };

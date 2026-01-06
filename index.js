@@ -17,7 +17,9 @@ const { testConnection, closePool } = require('./config/database');
 const authRoutes = require('./routes/v1/auth.routes');
 const userRoutes = require('./routes/v1/user.routes'); // NEW: Import user routes
 const petRoutes = require('./routes/v1/pet.routes'); // Import pet routes
-const subscriptionRoutes = require('./routes/v1/subscription.routes'); // Import subscription routes
+const subscriptionRoutes = require('./routes/v1/subscription.routes');
+const paymentRoutes = require('./routes/v1/payment.routes');
+const adminRoutes = require('./routes/v1/admin.routes');
 
 // Import cron jobs
 const { initPetLifeStageJob } = require('./cron/pet.cron');
@@ -81,7 +83,8 @@ app.get('/', (req, res) => {
       auth: `/api/${API_VERSION}/auth`,
       users: `/api/${API_VERSION}/users`, // NEW: Add users endpoint
       pets: `/api/${API_VERSION}/pets`,
-      subscriptions: `/api/${API_VERSION}/subscriptions`
+      subscriptions: `/api/${API_VERSION}/subscriptions`,
+      payments: `/api/${API_VERSION}/payments`
     }
   });
 });
@@ -110,6 +113,8 @@ app.use(`/api/${API_VERSION}/auth`, authLimiter, authRoutes);
 app.use(`/api/${API_VERSION}/users`, userRoutes); // NEW: Mount user routes (rate limiting is per-route)
 app.use(`/api/${API_VERSION}/pets`, petRoutes);
 app.use(`/api/${API_VERSION}/subscriptions`, subscriptionRoutes);
+app.use(`/api/${API_VERSION}/payments`, paymentRoutes);
+app.use(`/api/${API_VERSION}/admin`, adminRoutes);
 
 // 404 Handler
 app.use((req, res) => {
