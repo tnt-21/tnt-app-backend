@@ -54,39 +54,58 @@ INSERT INTO notification_templates (template_code, template_name, notification_t
 'Hi {{user_name}}, your {{tier_name}} subscription for {{pet_name}} will renew on {{renewal_date}}. Amount: ₹{{amount}}', 
 '["user_name", "tier_name", "pet_name", "renewal_date", "amount"]'::json, true);
 
--- Sample subscription tier configurations
-INSERT INTO subscription_tiers_config (tier_id, life_stage_id, species_id, category_id, quota_monthly, is_included, priority_level) VALUES
--- Basic tier - Dog Puppy
-(1, 1, 1, 1, 1, true, 1), -- Grooming: 1/month included
-(1, 1, 1, 2, 1, true, 2), -- Vet: 1/month included
-(1, 1, 1, 5, 4, true, 1), -- Walking: 4/month included
+-- Comprehensive Subscription Tier Configuration (Applies to ALL Species & Life Stages)
 
--- Plus tier - Dog Puppy  
-(2, 1, 1, 1, 2, true, 2), -- Grooming: 2/month included
-(2, 1, 1, 2, 2, true, 2), -- Vet: 2/month included
-(2, 1, 1, 3, 1, true, 2), -- Training: 1/month included
-(2, 1, 1, 5, 8, true, 2), -- Walking: 8/month included
+-- 1. Basic Tier (Tier 1): 1 Vet Consult (Cat 2) per month
+INSERT INTO subscription_tiers_config (tier_id, species_id, life_stage_id, category_id, quota_monthly, quota_annual, is_included)
+SELECT 
+    1, s.species_id, ls.life_stage_id, 2, 1, 12, true
+FROM species_ref s
+JOIN life_stages_ref ls ON s.species_id = ls.species_id
+ON CONFLICT DO NOTHING;
 
--- Eternal tier - All unlimited (represented by NULL quota)
-(3, 1, 1, 1, NULL, true, 3), -- Grooming: unlimited
-(3, 1, 1, 2, NULL, true, 3), -- Vet: unlimited
-(3, 1, 1, 3, NULL, true, 3), -- Training: unlimited
-(3, 1, 1, 4, NULL, true, 3), -- Boarding: unlimited
-(3, 1, 1, 5, NULL, true, 3), -- Walking: unlimited
-(3, 1, 1, 6, NULL, true, 3); -- Nutrition: unlimited
+-- 2. Plus Tier (Tier 2): 1 Grooming (Cat 1), 2 Vet Consults (Cat 2)
+INSERT INTO subscription_tiers_config (tier_id, species_id, life_stage_id, category_id, quota_monthly, quota_annual, is_included)
+SELECT 2, s.species_id, ls.life_stage_id, 1, 1, 12, true
+FROM species_ref s JOIN life_stages_ref ls ON s.species_id = ls.species_id
+ON CONFLICT DO NOTHING;
+
+INSERT INTO subscription_tiers_config (tier_id, species_id, life_stage_id, category_id, quota_monthly, quota_annual, is_included)
+SELECT 2, s.species_id, ls.life_stage_id, 2, 2, 24, true
+FROM species_ref s JOIN life_stages_ref ls ON s.species_id = ls.species_id
+ON CONFLICT DO NOTHING;
+
+-- 3. Eternal Tier (Tier 3): Unlimited Vet (Cat 2), 2 Grooming (Cat 1), 1 Vaccination (Cat 6 - assumes ID from expansion) or from db diagram logic. 
+-- Note: In previous step expansion, Vaccination was Cat 3. In 001 seeds, it matches logic.
+-- Let's stick to the expanded logic: Cat 2 (Vet), Cat 1 (Grooming).
+-- Unlimited Vet:
+INSERT INTO subscription_tiers_config (tier_id, species_id, life_stage_id, category_id, quota_monthly, quota_annual, is_included)
+SELECT 3, s.species_id, ls.life_stage_id, 2, NULL, NULL, true
+FROM species_ref s JOIN life_stages_ref ls ON s.species_id = ls.species_id
+ON CONFLICT DO NOTHING;
+
+-- 2 Grooming:
+INSERT INTO subscription_tiers_config (tier_id, species_id, life_stage_id, category_id, quota_monthly, quota_annual, is_included)
+SELECT 3, s.species_id, ls.life_stage_id, 1, 2, 24, true
+FROM species_ref s JOIN life_stages_ref ls ON s.species_id = ls.species_id
+ON CONFLICT DO NOTHING;
+
 
 -- Fair Usage Policies for Eternal tier
 INSERT INTO fair_usage_policies (tier_id, category_id, max_usage_per_month, max_usage_per_week, max_usage_per_day, cooldown_period_days, abuse_threshold, abuse_action, description) VALUES
 (3, 1, 8, 2, NULL, 7, 10, 'manual_review', 'Unlimited grooming with fair usage: max 8/month, 2/week, 7 days between bookings'),
 (3, 2, 4, 1, NULL, 14, 6, 'manual_review', 'Unlimited vet visits: max 4/month, 1/week, 14 days between (unless emergency)'),
 (3, 5, NULL, NULL, 1, NULL, 3, 'warn', 'Daily walks: max 1/day'),
-(3, 4, 4, 1, NULL, NULL, 5, 'manual_review', 'Boarding: max 4 times/month, 1 week between bookings');
+(3, 4, 4, 1, NULL, NULL, 5, 'manual_review', 'Boarding: max 4 times/month, 1 week between bookings')
+ON CONFLICT DO NOTHING;
 
--- Sample promo codes
+-- Promo Codes
 INSERT INTO promo_codes (promo_code, promo_name, description, discount_type, discount_value, max_discount_amount, min_purchase_amount, applicable_to, max_uses_total, max_uses_per_user, valid_from, valid_until, is_active) VALUES
 ('WELCOME50', 'Welcome Discount', 'New user welcome offer', 'percentage', 50.00, 500.00, 299.00, 'all', 1000, 1, CURRENT_DATE, CURRENT_DATE + INTERVAL '90 days', true),
 ('PAWFECT20', 'Monthly Special', '20% off on all services', 'percentage', 20.00, 300.00, 500.00, 'service', 500, 3, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true),
-('FIRSTSUB100', 'First Subscription Discount', '₹100 off on first subscription', 'fixed_amount', 100.00, NULL, 999.00, 'subscription', NULL, 1, CURRENT_DATE, CURRENT_DATE + INTERVAL '180 days', true);
+('FIRSTSUB100', 'First Subscription Discount', '₹100 off on first subscription', 'fixed_amount', 100.00, NULL, 999.00, 'subscription', NULL, 1, CURRENT_DATE, CURRENT_DATE + INTERVAL '180 days', true),
+('SUMMER2024', 'Summer Sale', 'Hot summer deals', 'percentage', 20.00, 1000.00, 0, 'all', 1000, 1, NOW(), NOW() + INTERVAL '3 months', true)
+ON CONFLICT (promo_code) DO NOTHING;
 
 DO $$
 BEGIN

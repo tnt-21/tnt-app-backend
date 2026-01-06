@@ -24,18 +24,20 @@ INSERT INTO life_stages_ref (species_id, life_stage_code, life_stage_name, min_a
 
 -- Subscription Tiers
 INSERT INTO subscription_tiers_ref (tier_code, tier_name, tier_description, marketing_tagline, display_order, color_hex, is_active) VALUES
-('basic', 'Basic Care', 'Essential pet care services', 'Everything your pet needs', 1, '#3B82F6', true),
-('plus', 'Plus Care', 'Enhanced care with priority booking', 'Premium care for your furry friend', 2, '#8B5CF6', true),
-('eternal', 'Eternal Care', 'Complete care with dedicated manager', 'Lifetime companion for your companion', 3, '#F59E0B', true);
+('basic', 'Basic Care', 'Essential pet care services', 'Start your journey', 1, '#3B82F6', true),
+('plus', 'Plus Care', 'Enhanced protection and perks', 'Step up the care', 2, '#8B5CF6', true),
+('eternal', 'Eternal Care', 'Premium all-inclusive care', 'The ultimate love', 3, '#F59E0B', true)
+ON CONFLICT (tier_code) DO NOTHING;
 
 -- Service Categories
-INSERT INTO service_categories_ref (category_code, category_name, description, display_order, is_active) VALUES
-('grooming', 'Grooming Services', 'Professional pet grooming and hygiene', 1, true),
-('vet', 'Veterinary Care', 'Health checkups and medical services', 2, true),
-('training', 'Training', 'Behavioral training and obedience', 3, true),
-('boarding', 'Boarding & Daycare', 'Pet boarding and daycare services', 4, true),
-('walking', 'Walking & Exercise', 'Daily walks and exercise routines', 5, true),
-('nutrition', 'Nutrition Consulting', 'Diet planning and nutrition advice', 6, true);
+INSERT INTO service_categories_ref (category_id, category_code, category_name, description, display_order, is_active) VALUES
+(1, 'grooming', 'Grooming Services', 'Professional pet grooming and hygiene', 1, true),
+(2, 'vet_consult', 'Veterinary Care', 'Health checkups and medical services', 2, true),
+(3, 'training', 'Training', 'Behavioral training and obedience', 3, true),
+(4, 'boarding', 'Boarding & Daycare', 'Pet boarding and daycare services', 4, true),
+(5, 'walking', 'Walking & Exercise', 'Daily walks and exercise routines', 5, true),
+(6, 'nutrition', 'Nutrition Consulting', 'Diet planning and nutrition advice', 6, true)
+ON CONFLICT (category_code) DO NOTHING;
 
 -- Booking Statuses
 INSERT INTO booking_statuses_ref (status_code, status_name, status_type, display_color, allow_cancellation, allow_reschedule) VALUES

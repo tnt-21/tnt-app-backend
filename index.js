@@ -17,6 +17,7 @@ const { testConnection, closePool } = require('./config/database');
 const authRoutes = require('./routes/v1/auth.routes');
 const userRoutes = require('./routes/v1/user.routes'); // NEW: Import user routes
 const petRoutes = require('./routes/v1/pet.routes'); // Import pet routes
+const subscriptionRoutes = require('./routes/v1/subscription.routes'); // Import subscription routes
 
 // Import cron jobs
 const { initPetLifeStageJob } = require('./cron/pet.cron');
@@ -79,7 +80,8 @@ app.get('/', (req, res) => {
       health: '/health', 
       auth: `/api/${API_VERSION}/auth`,
       users: `/api/${API_VERSION}/users`, // NEW: Add users endpoint
-      pets: `/api/${API_VERSION}/pets`
+      pets: `/api/${API_VERSION}/pets`,
+      subscriptions: `/api/${API_VERSION}/subscriptions`
     }
   });
 });
@@ -107,6 +109,7 @@ app.get('/health', async (req, res) => {
 app.use(`/api/${API_VERSION}/auth`, authLimiter, authRoutes);
 app.use(`/api/${API_VERSION}/users`, userRoutes); // NEW: Mount user routes (rate limiting is per-route)
 app.use(`/api/${API_VERSION}/pets`, petRoutes);
+app.use(`/api/${API_VERSION}/subscriptions`, subscriptionRoutes);
 
 // 404 Handler
 app.use((req, res) => {

@@ -414,7 +414,125 @@ const updateGrowthRecordSchema = Joi.object({
   photo_url: Joi.string().uri().allow(null, '').optional()
 }).min(1);
 
-// Export all schemas
+
+// ==================== SUBSCRIPTION SCHEMAS ====================
+
+const createSubscriptionSchema = Joi.object({
+  pet_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid pet ID format',
+      'any.required': 'Pet ID is required'
+    }),
+  tier_id: Joi.number().integer().min(1).max(3).required()
+    .messages({
+      'number.base': 'Tier ID must be a number',
+      'number.min': 'Invalid tier ID',
+      'number.max': 'Invalid tier ID',
+      'any.required': 'Tier ID is required'
+    }),
+  billing_cycle_id: Joi.number().integer().min(1).max(2).required()
+    .messages({
+      'number.base': 'Billing cycle ID must be a number',
+      'number.min': 'Invalid billing cycle',
+      'number.max': 'Invalid billing cycle',
+      'any.required': 'Billing cycle is required'
+    }),
+  promo_code: Joi.string().uppercase().max(50).optional()
+    .messages({
+      'string.max': 'Promo code too long'
+    })
+});
+
+const upgradeSubscriptionSchema = Joi.object({
+  new_tier_id: Joi.number().integer().min(1).max(3).required()
+    .messages({
+      'number.base': 'New tier ID must be a number',
+      'any.required': 'New tier ID is required'
+    }),
+  new_billing_cycle_id: Joi.number().integer().min(1).max(2).optional()
+    .messages({
+      'number.base': 'Billing cycle ID must be a number'
+    })
+});
+
+const downgradeSubscriptionSchema = Joi.object({
+  new_tier_id: Joi.number().integer().min(1).max(3).required()
+    .messages({
+      'number.base': 'New tier ID must be a number',
+      'any.required': 'New tier ID is required'
+    }),
+  new_billing_cycle_id: Joi.number().integer().min(1).max(2).optional()
+    .messages({
+      'number.base': 'Billing cycle ID must be a number'
+    })
+});
+
+const pauseSubscriptionSchema = Joi.object({
+  reason: Joi.string().max(500).required()
+    .messages({
+      'string.max': 'Reason too long',
+      'any.required': 'Reason is required'
+    }),
+  resume_date: Joi.date().min('now').required()
+    .messages({
+      'date.base': 'Invalid resume date',
+      'date.min': 'Resume date must be in the future',
+      'any.required': 'Resume date is required'
+    })
+});
+
+const cancelSubscriptionSchema = Joi.object({
+  reason: Joi.string().max(500).required()
+    .messages({
+      'string.max': 'Reason too long',
+      'any.required': 'Cancellation reason is required'
+    }),
+  immediate: Joi.boolean().default(false)
+    .messages({
+      'boolean.base': 'Immediate must be true or false'
+    })
+});
+
+const toggleAutoRenewalSchema = Joi.object({
+  auto_renew: Joi.boolean().required()
+    .messages({
+      'boolean.base': 'Auto renew must be true or false',
+      'any.required': 'Auto renew setting is required'
+    })
+});
+
+const validatePromoCodeSchema = Joi.object({
+  promo_code: Joi.string().uppercase().max(50).required()
+    .messages({
+      'string.max': 'Promo code too long',
+      'any.required': 'Promo code is required'
+    }),
+  tier_id: Joi.number().integer().min(1).max(3).required()
+    .messages({
+      'any.required': 'Tier ID is required'
+    }),
+  billing_cycle_id: Joi.number().integer().min(1).max(2).required()
+    .messages({
+      'any.required': 'Billing cycle is required'
+    })
+});
+
+const calculatePriceSchema = Joi.object({
+  tier_id: Joi.number().integer().min(1).max(3).required()
+    .messages({
+      'any.required': 'Tier ID is required'
+    }),
+  billing_cycle_id: Joi.number().integer().min(1).max(2).required()
+    .messages({
+      'any.required': 'Billing cycle is required'
+    }),
+  promo_code: Joi.string().uppercase().max(50).optional()
+    .messages({
+      'string.max': 'Promo code too long'
+    })
+});
+
+
 module.exports = {
   updateProfileSchema,
   createAddressSchema,
@@ -447,5 +565,15 @@ module.exports = {
   
   // Growth tracking
   createGrowthRecordSchema,
-  updateGrowthRecordSchema
+  updateGrowthRecordSchema,
+
+  // Subscription schemas
+  createSubscriptionSchema,
+  upgradeSubscriptionSchema,
+  downgradeSubscriptionSchema,
+  pauseSubscriptionSchema,
+  cancelSubscriptionSchema,
+  toggleAutoRenewalSchema,
+  validatePromoCodeSchema,
+  calculatePriceSchema
 };

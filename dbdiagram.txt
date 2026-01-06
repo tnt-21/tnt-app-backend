@@ -1,0 +1,1688 @@
+// ========================================
+// TAILS & TALES - COMPLETE DATABASE SCHEMA
+// Production-Ready with Reference Tables & Foreign Keys
+// ========================================
+
+// ========================================
+// REFERENCE/LOOKUP TABLES (Master Data)
+// ========================================
+
+Table species_ref {
+  species_id smallint [primary key]
+  species_code varchar(20) [unique, not null, note: 'dog, cat']
+  species_name varchar(50) [not null, note: 'Dog, Cat']
+  icon_url varchar(500)
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  
+  Note: 'Master species list - dog, cat'
+}
+
+Table life_stages_ref {
+  life_stage_id smallint [primary key]
+  species_id smallint [ref: > species_ref.species_id, not null]
+  life_stage_code varchar(30) [unique, not null, note: 'puppy, developing, adult, senior, kitten, young_adult, senior_cat']
+  life_stage_name varchar(100) [not null, note: 'Puppy (0-12 months), Adult (3-8 years)']
+  min_age_months int [note: 'minimum age in months']
+  max_age_months int [note: 'maximum age, NULL for open-ended']
+  description text
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    (species_id, life_stage_code)
+  }
+  
+  Note: 'Life stages mapped to species with age ranges'
+}
+
+Table subscription_tiers_ref {
+  tier_id smallint [primary key]
+  tier_code varchar(20) [unique, not null, note: 'basic, plus, eternal']
+  tier_name varchar(50) [not null, note: 'Basic Care, Plus Care, Eternal Care']
+  tier_description text
+  marketing_tagline varchar(255)
+  display_order int [note: 'for UI sorting']
+  icon_url varchar(500)
+  color_hex varchar(7) [note: 'UI theme color']
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  Note: 'Subscription tier definitions - Basic, Plus, Eternal'
+}
+
+Table service_categories_ref {
+  category_id smallint [primary key]
+  category_code varchar(50) [unique, not null, note: 'grooming, vet, training, boarding, walking, nutrition']
+  category_name varchar(100) [not null, note: 'Grooming Services, Veterinary Care']
+  description text
+  icon_url varchar(500)
+  display_order int
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  
+  Note: 'Service category master list'
+}
+
+Table booking_statuses_ref {
+  status_id smallint [primary key]
+  status_code varchar(30) [unique, not null, note: 'pending, confirmed, in_progress, completed, cancelled, rescheduled']
+  status_name varchar(50) [not null]
+  status_type varchar(20) [note: 'active, completed, cancelled']
+  display_color varchar(7) [note: 'hex color for UI #FF5733']
+  allow_cancellation boolean [default: true]
+  allow_reschedule boolean [default: true]
+  is_active boolean [default: true]
+  
+  Note: 'Booking status workflow definitions'
+}
+
+Table location_types_ref {
+  location_type_id smallint [primary key]
+  type_code varchar(20) [unique, not null, note: 'doorstep, care_van']
+  type_name varchar(50) [not null, note: 'At Your Doorstep, Care Van Visit']
+  description text
+  is_active boolean [default: true]
+  
+  Note: 'Service delivery location types'
+}
+
+Table user_roles_ref {
+  role_id smallint [primary key]
+  role_code varchar(30) [unique, not null, note: 'customer, caregiver, care_manager, admin, super_admin']
+  role_name varchar(50) [not null]
+  permissions json [note: 'role-based permissions']
+  is_active boolean [default: true]
+  
+  Note: 'User role definitions'
+}
+
+Table gender_ref {
+  gender_id smallint [primary key]
+  gender_code varchar(10) [unique, not null, note: 'male, female, unknown']
+  gender_name varchar(20) [not null]
+  
+  Note: 'Gender options for pets'
+}
+
+Table billing_cycles_ref {
+  billing_cycle_id smallint [primary key]
+  cycle_code varchar(20) [unique, not null, note: 'monthly, annual']
+  cycle_name varchar(50) [not null]
+  months int [not null, note: '1 for monthly, 12 for annual']
+  discount_percentage decimal(5,2) [default: 0, note: 'e.g., 15% off for annual']
+  
+  Note: 'Subscription billing cycle options'
+}
+
+// ========================================
+// CORE USER & AUTHENTICATION
+// ========================================
+
+Table users {
+  user_id uuid [primary key]
+  phone varchar(15) [unique, not null]
+  email varchar(255) [unique]
+  full_name varchar(255)
+  role_id smallint [ref: > user_roles_ref.role_id, not null]
+  profile_photo_url varchar(500)
+  date_of_birth date
+  status varchar(20) [default: 'active', note: 'active, inactive, suspended, deleted']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  last_login timestamp
+  
+  indexes {
+    phone
+    email
+    role_id
+    status
+  }
+  
+  Note: 'All system users - customers, caregivers, admins'
+}
+
+Table otp_verifications {
+  otp_id uuid [primary key]
+  user_id uuid [ref: > users.user_id]
+  phone varchar(15) [not null]
+  otp varchar(6) [not null]
+  purpose varchar(30) [default: 'login', note: 'login, registration, password_reset']
+  expires_at timestamp [not null]
+  verified boolean [default: false]
+  verified_at timestamp
+  attempts int [default: 0]
+  max_attempts int [default: 3]
+  ip_address varchar(45)
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    (phone, created_at)
+    expires_at
+  }
+  
+  Note: 'OTP verification for authentication'
+}
+
+Table user_addresses {
+  address_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, not null]
+  label varchar(50) [note: 'home, work, other']
+  address_line1 varchar(255) [not null]
+  address_line2 varchar(255)
+  landmark varchar(255)
+  city varchar(100) [not null]
+  state varchar(100) [not null]
+  pincode varchar(10) [not null]
+  country varchar(50) [default: 'India']
+  latitude decimal(10,8)
+  longitude decimal(11,8)
+  is_default boolean [default: false]
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    (user_id, is_default)
+  }
+  
+  Note: 'User saved addresses for service delivery'
+}
+
+Table sessions {
+  session_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, not null]
+  device_token varchar(500)
+  device_type varchar(50) [note: 'ios, android, web']
+  device_name varchar(100)
+  fcm_token varchar(500) [note: 'Firebase Cloud Messaging token for push notifications']
+  ip_address varchar(45)
+  user_agent text
+  is_active boolean [default: true]
+  expires_at timestamp [not null]
+  created_at timestamp [default: `now()`]
+  last_activity timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    (user_id, is_active)
+  }
+  
+  Note: 'User session management and device tracking'
+}
+
+Table user_preferences {
+  preference_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, unique, not null]
+  language varchar(10) [default: 'en']
+  timezone varchar(50) [default: 'Asia/Kolkata']
+  currency varchar(3) [default: 'INR']
+  notification_enabled boolean [default: true]
+  sms_enabled boolean [default: true]
+  email_enabled boolean [default: true]
+  push_enabled boolean [default: true]
+  whatsapp_enabled boolean [default: false]
+  theme varchar(20) [default: 'light', note: 'light, dark, auto']
+  updated_at timestamp [default: `now()`]
+  
+  Note: 'User app preferences and notification settings'
+}
+
+// ========================================
+// PET MANAGEMENT
+// ========================================
+
+Table pets {
+  pet_id uuid [primary key]
+  owner_id uuid [ref: > users.user_id, not null]
+  name varchar(100) [not null]
+  species_id smallint [ref: > species_ref.species_id, not null]
+  life_stage_id smallint [ref: > life_stages_ref.life_stage_id, not null]
+  breed varchar(100)
+  gender_id smallint [ref: > gender_ref.gender_id]
+  date_of_birth date [not null]
+  weight decimal(5,2) [note: 'in kg']
+  color varchar(50)
+  photo_url varchar(500)
+  microchip_id varchar(50) [unique]
+  medical_conditions text [note: 'known allergies, chronic conditions']
+  behavioral_notes text
+  is_active boolean [default: true]
+  is_deceased boolean [default: false]
+  deceased_date date
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    owner_id
+    (species_id, life_stage_id)
+    microchip_id
+    is_active
+  }
+  
+  Note: 'Pet profiles with core information'
+}
+
+Table health_records {
+  record_id uuid [primary key]
+  pet_id uuid [ref: > pets.pet_id, not null]
+  record_type varchar(50) [note: 'vaccination, vet_visit, medication, surgery, allergy, condition, test_result']
+  title varchar(255) [not null]
+  description text
+  record_date date [not null]
+  provider_name varchar(255) [note: 'clinic/hospital name']
+  provider_contact varchar(50)
+  provider_address text
+  document_urls json [note: 'array of uploaded document URLs']
+  diagnosis text
+  treatment_plan text
+  notes text
+  cost decimal(10,2)
+  created_by uuid [ref: > users.user_id]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    pet_id
+    record_type
+    record_date
+  }
+  
+  Note: 'Complete health history for each pet'
+}
+
+Table vaccinations {
+  vaccination_id uuid [primary key]
+  pet_id uuid [ref: > pets.pet_id, not null]
+  vaccine_name varchar(255) [not null, note: 'Rabies, DHPP, Bordetella']
+  vaccination_date date [not null]
+  next_due_date date
+  batch_number varchar(100) [note: 'vaccine batch for safety recalls']
+  provider varchar(255) [note: 'clinic that administered vaccine']
+  provider_contact varchar(50)
+  veterinarian_name varchar(255)
+  vaccination_site varchar(100) [note: 'injection location']
+  adverse_reactions text
+  certificate_url varchar(500)
+  is_completed boolean [default: true]
+  reminder_sent boolean [default: false]
+  notes text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    pet_id
+    next_due_date
+    (pet_id, is_completed)
+  }
+  
+  Note: 'Vaccination records with reminder tracking'
+}
+
+Table medications {
+  medication_id uuid [primary key]
+  pet_id uuid [ref: > pets.pet_id, not null]
+  medication_name varchar(255) [not null]
+  medication_type varchar(50) [note: 'tablet, liquid, injection, topical']
+  dosage varchar(100) [note: '1 tablet, 5ml, etc']
+  frequency varchar(100) [note: 'once daily, twice daily, every 8 hours']
+  route varchar(50) [note: 'oral, topical, injection']
+  start_date date [not null]
+  end_date date
+  prescribed_by varchar(255) [note: 'veterinarian name']
+  prescribed_for varchar(255) [note: 'condition being treated']
+  pharmacy varchar(255)
+  refills_remaining int [default: 0]
+  is_active boolean [default: true]
+  reminder_enabled boolean [default: true]
+  reminder_times json [note: 'array of reminder times']
+  side_effects text
+  instructions text
+  notes text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    (pet_id, is_active)
+    (pet_id, start_date)
+  }
+  
+  Note: 'Current and historical medications'
+}
+
+Table pet_insurance {
+  insurance_id uuid [primary key]
+  pet_id uuid [ref: > pets.pet_id, not null]
+  insurer_name varchar(255) [not null]
+  policy_number varchar(100) [unique, not null]
+  policy_holder_name varchar(255)
+  coverage_type varchar(100) [note: 'basic, comprehensive, lifetime, accident_only']
+  coverage_amount decimal(10,2)
+  deductible_amount decimal(10,2)
+  premium_amount decimal(10,2)
+  premium_frequency varchar(20) [note: 'monthly, quarterly, annual']
+  start_date date [not null]
+  end_date date [not null]
+  renewal_date date
+  renewal_reminder_sent boolean [default: false]
+  claim_phone varchar(50)
+  claim_email varchar(255)
+  exclusions text
+  documents_urls json
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    pet_id
+    policy_number
+    (end_date, is_active)
+  }
+  
+  Note: 'Pet insurance policy information'
+}
+
+Table growth_tracking {
+  tracking_id uuid [primary key]
+  pet_id uuid [ref: > pets.pet_id, not null]
+  measurement_date date [not null]
+  weight decimal(5,2) [note: 'in kg']
+  height decimal(5,2) [note: 'in cm, shoulder height']
+  length decimal(5,2) [note: 'in cm, nose to tail']
+  body_condition_score int [note: '1-9 scale']
+  notes text
+  recorded_by uuid [ref: > users.user_id]
+  photo_url varchar(500)
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    (pet_id, measurement_date)
+  }
+  
+  Note: 'Growth and weight tracking over time'
+}
+
+// ========================================
+// SUBSCRIPTION SYSTEM
+// ========================================
+
+Table subscriptions {
+  subscription_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, not null]
+  pet_id uuid [ref: > pets.pet_id, not null]
+  tier_id smallint [ref: > subscription_tiers_ref.tier_id, not null]
+  billing_cycle_id smallint [ref: > billing_cycles_ref.billing_cycle_id, not null]
+  start_date date [not null]
+  end_date date
+  current_period_start date [not null]
+  current_period_end date [not null]
+  next_billing_date date
+  status varchar(20) [not null, default: 'active', note: 'active, paused, cancelled, expired, trial']
+  pause_reason text
+  paused_at timestamp
+  resume_date date
+  auto_renew boolean [default: true]
+  base_price decimal(10,2) [not null]
+  discount_applied decimal(10,2) [default: 0]
+  final_price decimal(10,2) [not null]
+  promo_code varchar(50)
+  trial_end_date date
+  cancellation_date timestamp
+  cancellation_reason text
+  cancelled_by uuid [ref: > users.user_id]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    (user_id, status)
+    (pet_id, status)
+    tier_id
+    next_billing_date
+    status
+  }
+  
+  Note: 'Active and historical subscriptions'
+}
+
+Table subscription_tiers_config {
+  config_id uuid [primary key]
+  tier_id smallint [ref: > subscription_tiers_ref.tier_id, not null]
+  life_stage_id smallint [ref: > life_stages_ref.life_stage_id, not null]
+  species_id smallint [ref: > species_ref.species_id, not null]
+  category_id smallint [ref: > service_categories_ref.category_id, not null]
+  quota_monthly int [note: 'null means unlimited']
+  quota_annual int [note: 'for annual subscribers']
+  is_included boolean [default: false]
+  features json [note: 'additional features specific to this combo']
+  priority_level int [default: 0, note: 'higher = more priority']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    (tier_id, life_stage_id, species_id)
+    (tier_id, category_id)
+    tier_id
+  }
+  
+  Note: 'Configuration matrix: what each tier includes per life stage'
+}
+
+Table subscription_entitlements {
+  entitlement_id uuid [primary key]
+  subscription_id uuid [ref: > subscriptions.subscription_id, not null]
+  category_id smallint [ref: > service_categories_ref.category_id, not null]
+  quota_total int [note: 'total allowed in current period']
+  quota_used int [default: 0]
+  quota_remaining int [note: 'calculated field']
+  reset_date date [note: 'when quota resets - monthly/annual']
+  last_used_date date
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    subscription_id
+    (subscription_id, category_id)
+  }
+  
+  Note: 'Track service usage per subscription'
+}
+
+Table subscription_history {
+  history_id uuid [primary key]
+  subscription_id uuid [ref: > subscriptions.subscription_id, not null]
+  action varchar(50) [note: 'created, upgraded, downgraded, paused, resumed, cancelled, renewed, expired']
+  old_tier_id smallint [ref: > subscription_tiers_ref.tier_id]
+  new_tier_id smallint [ref: > subscription_tiers_ref.tier_id]
+  old_billing_cycle_id smallint [ref: > billing_cycles_ref.billing_cycle_id]
+  new_billing_cycle_id smallint [ref: > billing_cycles_ref.billing_cycle_id]
+  old_price decimal(10,2)
+  new_price decimal(10,2)
+  price_difference decimal(10,2)
+  prorated_amount decimal(10,2) [note: 'refund/charge for mid-cycle changes']
+  performed_by uuid [ref: > users.user_id, not null]
+  reason text
+  notes text
+  effective_date date
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    subscription_id
+    created_at
+    action
+  }
+  
+  Note: 'Complete audit trail of subscription changes'
+}
+
+Table subscription_reminders {
+  reminder_id uuid [primary key]
+  subscription_id uuid [ref: > subscriptions.subscription_id, not null]
+  reminder_type varchar(50) [note: 'renewal, expiry, quota_warning, quota_exhausted, payment_due']
+  scheduled_date date [not null]
+  scheduled_time time [default: '09:00:00']
+  sent boolean [default: false]
+  sent_at timestamp
+  delivery_method varchar(20) [note: 'sms, email, push, whatsapp']
+  message_content text
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    (scheduled_date, sent)
+    subscription_id
+  }
+  
+  Note: 'Automated reminders for subscriptions'
+}
+
+// ========================================
+// SERVICES & BOOKINGS
+// ========================================
+
+Table service_catalog {
+  service_id uuid [primary key]
+  service_name varchar(255) [not null]
+  category_id smallint [ref: > service_categories_ref.category_id, not null]
+  description text
+  detailed_description text
+  base_price decimal(10,2) [not null]
+  duration_minutes int [note: 'estimated service duration']
+  is_doorstep boolean [default: true]
+  requires_equipment boolean [default: false]
+  equipment_list json
+  preparation_instructions text
+  terms_conditions text
+  is_active boolean [default: true]
+  icon_url varchar(500)
+  banner_image_url varchar(500)
+  video_url varchar(500)
+  popularity_score int [default: 0]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    category_id
+    is_active
+    (category_id, is_active)
+  }
+  
+  Note: 'Master service catalog'
+}
+
+Table service_eligibility_config {
+  eligibility_id uuid [primary key]
+  service_id uuid [ref: > service_catalog.service_id, not null]
+  species_id smallint [ref: > species_ref.species_id, not null]
+  life_stage_id smallint [ref: > life_stages_ref.life_stage_id, not null]
+  tier_id smallint [ref: > subscription_tiers_ref.tier_id, note: 'null = available to all including non-subscribers']
+  is_included boolean [default: false, note: 'included in subscription']
+  price_override decimal(10,2) [note: 'override base price for this combo']
+  discount_percentage decimal(5,2) [note: 'discount for subscribers']
+  prerequisites text [note: 'required conditions for booking']
+  restrictions text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    (service_id, species_id, life_stage_id, tier_id)
+    service_id
+  }
+  
+  Note: 'Service availability matrix by species/life stage/tier'
+}
+
+Table bookings {
+  booking_id uuid [primary key]
+  booking_number varchar(50) [unique, not null, note: 'human-readable booking ID']
+  user_id uuid [ref: > users.user_id, not null]
+  pet_id uuid [ref: > pets.pet_id, not null]
+  service_id uuid [ref: > service_catalog.service_id, not null]
+  subscription_id uuid [ref: > subscriptions.subscription_id, note: 'null if non-subscriber']
+  booking_date date [not null]
+  booking_time time [not null]
+  estimated_duration int [note: 'in minutes']
+  actual_start_time timestamp
+  actual_end_time timestamp
+  location_type_id smallint [ref: > location_types_ref.location_type_id, not null]
+  address_id uuid [ref: > user_addresses.address_id]
+  specific_location_notes text [note: 'gate code, parking instructions']
+  status_id smallint [ref: > booking_statuses_ref.status_id, not null]
+  is_subscription_service boolean [default: false]
+  base_amount decimal(10,2) [not null]
+  addons_amount decimal(10,2) [default: 0]
+  tax_amount decimal(10,2) [default: 0]
+  discount_amount decimal(10,2) [default: 0]
+  total_amount decimal(10,2) [not null]
+  payment_status varchar(20) [default: 'pending', note: 'pending, paid, failed, refunded']
+  cancellation_reason text
+  cancelled_by uuid [ref: > users.user_id]
+  cancelled_at timestamp
+  can_reschedule boolean [default: true]
+  reschedule_count int [default: 0]
+  max_reschedules int [default: 2]
+  special_instructions text
+  pet_behavior_notes text
+  notes text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    pet_id
+    service_id
+    subscription_id
+    (booking_date, status_id)
+    status_id
+    booking_number
+    (booking_date, booking_time)
+  }
+  
+  Note: 'Service bookings from customers'
+}
+
+Table booking_addons {
+  addon_id uuid [primary key]
+  booking_id uuid [ref: > bookings.booking_id, not null]
+  addon_type varchar(50) [note: 'product, service_upgrade, extra_service']
+  addon_name varchar(255) [not null]
+  addon_description text
+  unit_price decimal(10,2) [not null]
+  quantity int [default: 1]
+  total_price decimal(10,2) [not null]
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    booking_id
+  }
+  
+  Note: 'Additional products/services added to bookings'
+}
+
+Table booking_status_history {
+  history_id uuid [primary key]
+  booking_id uuid [ref: > bookings.booking_id, not null]
+  old_status_id smallint [ref: > booking_statuses_ref.status_id]
+  new_status_id smallint [ref: > booking_statuses_ref.status_id, not null]
+  changed_by uuid [ref: > users.user_id, not null]
+  changed_by_role varchar(30) [note: 'customer, caregiver, admin']
+  reason text
+  notes text
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    booking_id
+    created_at
+  }
+  
+  Note: 'Booking status change audit trail'
+}
+
+Table service_availability {
+  availability_id uuid [primary key]
+  service_id uuid [ref: > service_catalog.service_id, not null]
+  day_of_week int [note: '0=Sunday, 1=Monday, ... 6=Saturday']
+  start_time time [not null]
+  end_time time [not null]
+  slot_duration_minutes int [default: 60]
+  max_bookings_per_slot int [default: 5]
+  buffer_time_minutes int [default: 15, note: 'gap between bookings']
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    (service_id, day_of_week)
+    service_id
+  }
+  
+  Note: 'Service scheduling and slot configuration'
+}
+
+Table service_blackout_dates {
+  blackout_id uuid [primary key]
+  service_id uuid [ref: > service_catalog.service_id]
+  blackout_date date [not null]
+  reason varchar(255)
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    (service_id, blackout_date)
+  }
+  
+  Note: 'Dates when services are unavailable'
+}
+
+// ========================================
+// PAYMENT SYSTEM
+// ========================================
+
+Table payment_methods {
+  method_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, not null]
+  method_type varchar(30) [note: 'card, upi, netbanking, wallet']
+  provider varchar(50) [note: 'razorpay, stripe, paytm']
+  token varchar(500) [note: 'encrypted payment token']
+  card_brand varchar(30) [note: 'visa, mastercard, rupay']
+  last_four varchar(4)
+  expiry_month varchar(2)
+  expiry_year varchar(4)
+  cardholder_name varchar(255)
+  billing_address_id uuid [ref: > user_addresses.address_id]
+  is_default boolean [default: false]
+  is_verified boolean [default: false]
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    (user_id, is_default)
+    user_id
+  }
+  
+  Note: 'Saved payment methods for users'
+}
+
+Table invoices {
+  invoice_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, not null]
+  subscription_id uuid [ref: > subscriptions.subscription_id]
+  booking_id uuid [ref: > bookings.booking_id]
+  invoice_number varchar(50) [unique, not null]
+  invoice_type varchar(30) [note: 'subscription, service, addon, refund']
+  subtotal decimal(10,2) [not null]
+  tax_percentage decimal(5,2) [default: 18.00]
+  tax_amount decimal(10,2) [default: 0]
+  discount_percentage decimal(5,2) [default: 0]
+  discount_amount decimal(10,2) [default: 0]
+  total_amount decimal(10,2) [not null]
+  currency varchar(3) [default: 'INR']
+  status varchar(20) [not null, note: 'draft, pending, paid, failed, cancelled, refunded, partially_refunded']
+  due_date date [not null]
+  paid_at timestamp
+  payment_link varchar(500)
+  notes text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    subscription_id
+    booking_id
+    (status, due_date)
+    invoice_number
+    status
+  }
+  
+  Note: 'Financial invoices for all transactions'
+}
+
+Table invoice_line_items {
+  line_item_id uuid [primary key]
+  invoice_id uuid [ref: > invoices.invoice_id, not null]
+  item_type varchar(50) [note: 'subscription, service, addon, tax, discount']
+  description varchar(255) [not null]
+  quantity int [default: 1]
+  unit_price decimal(10,2) [not null]
+  total_price decimal(10,2) [not null]
+  tax_applicable boolean [default: true]
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    invoice_id
+  }
+  
+  Note: 'Itemized breakdown of invoices'
+}
+
+Table payments {
+  payment_id uuid [primary key]
+  invoice_id uuid [ref: > invoices.invoice_id, not null]
+  user_id uuid [ref: > users.user_id, not null]
+  payment_method_id uuid [ref: > payment_methods.method_id]
+  amount decimal(10,2) [not null]
+  currency varchar(3) [default: 'INR']
+  status varchar(20) [not null, note: 'initiated, pending, success, failed, refunded, partially_refunded']
+  payment_gateway varchar(50) [note: 'razorpay, stripe, paytm']
+  transaction_id varchar(255) [unique]
+  gateway_order_id varchar(255)
+  gateway_response json
+  failure_reason text
+  payment_method_used varchar(50) [note: 'actual method used if different']
+  payment_date timestamp
+  retry_count int [default: 0]
+  ip_address varchar(45)
+  user_agent text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    invoice_id
+    user_id
+    transaction_id
+    status
+    payment_date
+  }
+  
+  Note: 'Payment transaction records'
+}
+
+Table refunds {
+  refund_id uuid [primary key]
+  payment_id uuid [ref: > payments.payment_id, not null]
+  invoice_id uuid [ref: > invoices.invoice_id, not null]
+  booking_id uuid [ref: > bookings.booking_id]
+  refund_amount decimal(10,2) [not null]
+  refund_type varchar(30) [note: 'full, partial, cancellation, error']
+  reason varchar(255)
+  detailed_reason text
+  status varchar(20) [note: 'pending, approved, processed, failed, rejected']
+  refund_method varchar(30) [note: 'original_source, bank_transfer, wallet']
+  refund_transaction_id varchar(255)
+  gateway_refund_id varchar(255)
+  processing_fee decimal(10,2) [default: 0]
+  net_refund_amount decimal(10,2)
+  processed_at timestamp
+  expected_date date [note: 'when customer will receive refund']
+  requested_by uuid [ref: > users.user_id, not null]
+  approved_by uuid [ref: > users.user_id]
+  notes text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    payment_id
+    invoice_id
+    booking_id
+    status
+  }
+  
+  Note: 'Refund requests and processing'
+}
+
+// ========================================
+// CAREGIVER SYSTEM
+// ========================================
+
+Table caregivers {
+  caregiver_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, unique, not null]
+  full_name varchar(255) [not null]
+  phone varchar(15) [unique, not null]
+  email varchar(255)
+  photo_url varchar(500)
+  date_of_birth date
+  gender varchar(10)
+  address text
+  city varchar(100)
+  state varchar(100)
+  pincode varchar(10)
+  emergency_contact_name varchar(255)
+  emergency_contact_phone varchar(15)
+  experience_years int
+  education varchar(255)
+  certifications json [note: 'array of certification objects']
+  languages_spoken json [note: 'array of languages']
+  specializations json [note: 'puppy care, senior care, etc']
+  service_area_pincodes json [note: 'array of pincodes they cover']
+  average_rating decimal(3,2) [default: 0.00]
+  total_ratings int [default: 0]
+  total_services_completed int [default: 0]
+  total_distance_traveled decimal(10,2) [default: 0]
+  background_check_status varchar(30) [note: 'pending, verified, failed']
+  background_check_date date
+  onboarding_completed boolean [default: false]
+  onboarding_date date
+  status varchar(20) [default: 'active', note: 'active, inactive, on_leave, suspended, terminated']
+  suspension_reason text
+  bank_account_number varchar(50)
+  ifsc_code varchar(15)
+  pan_number varchar(10)
+  aadhar_number varchar(12)
+  joined_date date [default: 'now()']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    status
+    average_rating
+    city
+    (status, average_rating)
+  }
+  
+  Note: 'Caregiver profiles with complete details'
+}
+
+Table caregiver_specializations {
+  specialization_id uuid [primary key]
+  caregiver_id uuid [ref: > caregivers.caregiver_id, not null]
+  category_id smallint [ref: > service_categories_ref.category_id, not null]
+  proficiency_level varchar(20) [note: 'beginner, intermediate, expert']
+  certification_name varchar(255)
+  certification_url varchar(500)
+  years_experience int
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    caregiver_id
+    (caregiver_id, category_id)
+  }
+  
+  Note: 'Caregiver service specializations and certifications'
+}
+
+Table assignments {
+  assignment_id uuid [primary key]
+  booking_id uuid [ref: > bookings.booking_id, unique, not null]
+  caregiver_id uuid [ref: > caregivers.caregiver_id, not null]
+  assigned_by uuid [ref: > users.user_id, not null]
+  assignment_type varchar(30) [default: 'auto', note: 'auto, manual, preferred']
+  status varchar(30) [note: 'assigned, accepted, rejected, en_route, started, completed, cancelled']
+  rejection_reason text
+  route_details json [note: 'navigation waypoints, estimated route']
+  estimated_distance_km decimal(6,2)
+  actual_distance_km decimal(6,2)
+  estimated_start_time timestamp
+  actual_start_time timestamp
+  estimated_end_time timestamp
+  actual_end_time timestamp
+  travel_time_minutes int
+  service_time_minutes int
+  mileage_reimbursement decimal(10,2)
+  service_payment decimal(10,2)
+  total_earnings decimal(10,2)
+  assigned_at timestamp [default: `now()`]
+  accepted_at timestamp
+  started_at timestamp
+  completed_at timestamp
+  
+  indexes {
+    caregiver_id
+    booking_id
+    status
+    (caregiver_id, status)
+    assigned_at
+  }
+  
+  Note: 'Caregiver assignments for bookings'
+}
+
+Table service_logs {
+  log_id uuid [primary key]
+  assignment_id uuid [ref: > assignments.assignment_id, not null]
+  pre_service_checklist json [note: 'checklist before service']
+  post_service_checklist json [note: 'checklist after service']
+  before_photos json [note: 'array of photo URLs']
+  after_photos json [note: 'array of photo URLs']
+  service_notes text
+  pet_behavior_observed text
+  health_observations text
+  concerns_flagged text
+  products_used json [note: 'shampoo, equipment used']
+  customer_feedback_immediate text
+  additional_services_recommended text
+  next_visit_suggestions text
+  completed_at timestamp
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    assignment_id
+  }
+  
+  Note: 'Detailed service execution logs by caregivers'
+}
+
+Table caregiver_ratings {
+  rating_id uuid [primary key]
+  booking_id uuid [ref: > bookings.booking_id, unique, not null]
+  caregiver_id uuid [ref: > caregivers.caregiver_id, not null]
+  user_id uuid [ref: > users.user_id, not null]
+  rating_score decimal(2,1) [not null, note: '1.0 to 5.0']
+  punctuality_rating int [note: '1-5']
+  quality_rating int [note: '1-5']
+  friendliness_rating int [note: '1-5']
+  professionalism_rating int [note: '1-5']
+  feedback text
+  positive_aspects json [note: 'array of tags: punctual, gentle, professional']
+  negative_aspects json
+  would_book_again boolean
+  is_moderated boolean [default: false]
+  moderation_notes text
+  moderated_by uuid [ref: > users.user_id]
+  moderated_at timestamp
+  is_visible boolean [default: true]
+  is_featured boolean [default: false]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    caregiver_id
+    booking_id
+    created_at
+    (caregiver_id, is_visible)
+  }
+  
+  Note: 'Customer ratings and reviews for caregivers'
+}
+
+Table caregiver_availability {
+  availability_id uuid [primary key]
+  caregiver_id uuid [ref: > caregivers.caregiver_id, not null]
+  date date [not null]
+  start_time time [not null]
+  end_time time [not null]
+  is_available boolean [default: true]
+  unavailability_reason varchar(50) [note: 'leave, sick, training, other']
+  max_bookings int [default: 8]
+  current_bookings int [default: 0]
+  notes text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    (caregiver_id, date)
+    (date, is_available)
+  }
+  
+  Note: 'Caregiver schedule and availability'
+}
+
+Table caregiver_earnings {
+  earning_id uuid [primary key]
+  caregiver_id uuid [ref: > caregivers.caregiver_id, not null]
+  assignment_id uuid [ref: > assignments.assignment_id]
+  earning_type varchar(30) [note: 'service, mileage, bonus, penalty']
+  amount decimal(10,2) [not null]
+  calculation_details json
+  earning_date date [not null]
+  payout_status varchar(20) [default: 'pending', note: 'pending, approved, paid']
+  payout_batch_id uuid
+  paid_at timestamp
+  notes text
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    caregiver_id
+    (caregiver_id, earning_date)
+    payout_status
+  }
+  
+  Note: 'Caregiver earnings tracking'
+}
+
+// ========================================
+// CARE MANAGER (ETERNAL TIER ONLY)
+// ========================================
+
+Table care_managers {
+  care_manager_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, unique, not null]
+  full_name varchar(255) [not null]
+  phone varchar(15) [unique, not null]
+  email varchar(255) [unique, not null]
+  photo_url varchar(500)
+  specialization text [note: 'senior pet care, puppy training specialist']
+  qualifications text
+  experience_years int
+  max_pets int [default: 50, note: 'max pets they can actively manage']
+  current_pets_count int [default: 0]
+  average_satisfaction_score decimal(3,2)
+  languages_spoken json
+  status varchar(20) [default: 'active']
+  joined_date date [default: 'now()']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    status
+    (status, current_pets_count)
+  }
+  
+  Note: 'Dedicated care managers for Eternal tier subscriptions'
+}
+
+Table care_manager_assignments {
+  assignment_id uuid [primary key]
+  care_manager_id uuid [ref: > care_managers.care_manager_id, not null]
+  subscription_id uuid [ref: > subscriptions.subscription_id, unique, not null, note: 'only eternal tier subscriptions']
+  pet_id uuid [ref: > pets.pet_id, not null]
+  user_id uuid [ref: > users.user_id, not null]
+  assignment_date date [default: 'now()']
+  onboarding_call_completed boolean [default: false]
+  onboarding_call_date timestamp
+  care_plan_created boolean [default: false]
+  care_plan_url varchar(500)
+  check_in_frequency varchar(20) [default: 'weekly', note: 'daily, weekly, biweekly']
+  last_check_in_date date
+  next_check_in_date date
+  notes text
+  is_active boolean [default: true]
+  unassigned_date date
+  unassignment_reason text
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    care_manager_id
+    subscription_id
+    pet_id
+    (care_manager_id, is_active)
+  }
+  
+  Note: 'Care manager to pet assignments'
+}
+
+Table care_manager_interactions {
+  interaction_id uuid [primary key]
+  assignment_id uuid [ref: > care_manager_assignments.assignment_id, not null]
+  interaction_type varchar(50) [note: 'phone_call, video_call, message, visit, emergency']
+  interaction_date timestamp [not null]
+  duration_minutes int
+  summary text
+  action_items json
+  next_follow_up_date date
+  created_by uuid [ref: > users.user_id, not null]
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    assignment_id
+    interaction_date
+  }
+  
+  Note: 'Log of care manager interactions with pet parents'
+}
+
+// ========================================
+// TRACKING SYSTEM
+// ========================================
+
+Table tracking_sessions {
+  session_id uuid [primary key]
+  booking_id uuid [ref: > bookings.booking_id, not null]
+  caregiver_id uuid [ref: > caregivers.caregiver_id, not null]
+  pet_id uuid [ref: > pets.pet_id, not null]
+  session_type varchar(30) [note: 'service_tracking, continuous_tracking']
+  start_time timestamp [not null]
+  end_time timestamp
+  is_active boolean [default: true]
+  total_distance_km decimal(6,2)
+  average_speed decimal(5,2) [note: 'km/h']
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    (booking_id, is_active)
+    (pet_id, is_active)
+    caregiver_id
+  }
+  
+  Note: 'GPS tracking sessions for services and continuous pet tracking'
+}
+
+Table location_tracking {
+  tracking_id uuid [primary key]
+  session_id uuid [ref: > tracking_sessions.session_id, not null]
+  latitude decimal(10,8) [not null]
+  longitude decimal(11,8) [not null]
+  accuracy decimal(6,2) [note: 'GPS accuracy in meters']
+  altitude decimal(8,2)
+  speed decimal(5,2) [note: 'km/h']
+  heading decimal(5,2) [note: 'direction in degrees']
+  battery_level int [note: 'device battery %']
+  timestamp timestamp [default: `now()`]
+  
+  indexes {
+    (session_id, timestamp)
+    session_id
+  }
+  
+  Note: 'Real-time GPS location points'
+}
+
+// ========================================
+// NOTIFICATIONS
+// ========================================
+
+Table notifications {
+  notification_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, not null]
+  notification_type varchar(50) [note: 'booking_confirmation, reminder, payment, promo, update, emergency']
+  priority varchar(20) [default: 'normal', note: 'low, normal, high, urgent']
+  title varchar(255) [not null]
+  message text [not null]
+  rich_content json [note: 'images, buttons, custom data']
+  action_type varchar(50) [note: 'open_booking, open_subscription, open_url, none']
+  action_url varchar(500)
+  action_data json
+  delivery_method varchar(20) [note: 'push, sms, email, whatsapp, in_app']
+  is_read boolean [default: false]
+  read_at timestamp
+  is_delivered boolean [default: false]
+  delivered_at timestamp
+  is_clicked boolean [default: false]
+  clicked_at timestamp
+  expires_at timestamp
+  sent_at timestamp [default: `now()`]
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    (user_id, is_read)
+    (user_id, sent_at)
+    notification_type
+  }
+  
+  Note: 'All notifications sent to users'
+}
+
+Table notification_preferences {
+  preference_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, unique, not null]
+  booking_confirmations boolean [default: true]
+  booking_reminders boolean [default: true]
+  health_reminders boolean [default: true]
+  vaccination_reminders boolean [default: true]
+  medication_reminders boolean [default: true]
+  subscription_updates boolean [default: true]
+  payment_alerts boolean [default: true]
+  promotional boolean [default: true]
+  community_events boolean [default: true]
+  care_manager_updates boolean [default: true]
+  emergency_alerts boolean [default: true]
+  sms_enabled boolean [default: true]
+  email_enabled boolean [default: true]
+  push_enabled boolean [default: true]
+  whatsapp_enabled boolean [default: false]
+  quiet_hours_start time
+  quiet_hours_end time
+  updated_at timestamp [default: `now()`]
+  
+  Note: 'Granular notification preferences per user'
+}
+
+Table notification_templates {
+  template_id uuid [primary key]
+  template_code varchar(50) [unique, not null]
+  template_name varchar(255) [not null]
+  notification_type varchar(50) [not null]
+  delivery_method varchar(20) [not null]
+  subject varchar(255)
+  body_template text [not null, note: 'template with variables {{pet_name}}']
+  variables json [note: 'list of available variables']
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    template_code
+    notification_type
+  }
+  
+  Note: 'Reusable notification templates'
+}
+
+// ========================================
+// COMMUNITY & EVENTS
+// ========================================
+
+Table community_events {
+  event_id uuid [primary key]
+  title varchar(255) [not null]
+  description text
+  detailed_description text
+  event_type varchar(50) [note: 'socialization, training, meetup, workshop, competition']
+  species_id smallint [ref: > species_ref.species_id, note: 'null = both species allowed']
+  life_stages_allowed json [note: 'array of life_stage_ids']
+  event_date date [not null]
+  event_time time [not null]
+  end_time time
+  duration_minutes int
+  location_name varchar(255)
+  location_address text
+  location_latitude decimal(10,8)
+  location_longitude decimal(11,8)
+  max_participants int
+  current_participants int [default: 0]
+  min_participants int [default: 1]
+  is_free boolean [default: true]
+  price decimal(10,2)
+  subscription_tiers_allowed json [note: 'array of tier_ids, null = all']
+  requirements text [note: 'vaccination proof, leash required, etc']
+  what_to_bring text
+  banner_image_url varchar(500)
+  gallery_images json
+  organizer_name varchar(255)
+  organizer_contact varchar(50)
+  status varchar(20) [default: 'upcoming', note: 'upcoming, ongoing, completed, cancelled']
+  cancellation_reason text
+  registration_deadline date
+  waitlist_enabled boolean [default: false]
+  waitlist_count int [default: 0]
+  tags json [note: 'searchable tags']
+  created_by uuid [ref: > users.user_id]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    event_date
+    status
+    (event_date, status)
+    event_type
+  }
+
+  Note: 'Community events and socialization sessions'
+}
+
+Table event_registrations {
+  registration_id uuid [primary key]
+  event_id uuid [ref: > community_events.event_id, not null]
+  user_id uuid [ref: > users.user_id, not null]
+  pet_id uuid [ref: > pets.pet_id, not null]
+  registration_type varchar(20) [default: 'confirmed', note: 'confirmed, waitlist']
+  status varchar(20) [default: 'registered', note: 'registered, attended, no_show, cancelled']
+  payment_required boolean [default: false]
+  payment_status varchar(20) [note: 'pending, paid, refunded']
+  invoice_id uuid [ref: > invoices.invoice_id]
+  special_requirements text
+  emergency_contact_name varchar(255)
+  emergency_contact_phone varchar(15)
+  checked_in boolean [default: false]
+  checked_in_at timestamp
+  feedback_rating int
+  feedback_text text
+  cancellation_reason text
+  cancelled_at timestamp
+  registered_at timestamp [default: `now()`]
+
+  indexes {
+    event_id
+    user_id
+    pet_id
+    (event_id, status)
+  }
+
+  Note: 'User registrations for community events'
+}
+
+// ========================================
+// SUPPORT & ADMIN
+// ========================================
+
+Table support_tickets {
+  ticket_id uuid [primary key]
+  ticket_number varchar(50) [unique, not null]
+  user_id uuid [ref: > users.user_id, not null]
+  booking_id uuid [ref: > bookings.booking_id]
+  subscription_id uuid [ref: > subscriptions.subscription_id]
+  pet_id uuid [ref: > pets.pet_id]
+  subject varchar(255) [not null]
+  description text [not null]
+  category varchar(50) [note: 'technical, billing, service_quality, complaint, inquiry, feedback']
+  subcategory varchar(50)
+  priority varchar(20) [default: 'medium', note: 'low, medium, high, urgent']
+  status varchar(20) [default: 'open', note: 'open, in_progress, waiting_customer, resolved, closed, reopened']
+  channel varchar(20) [note: 'app, email, phone, chat, whatsapp']
+  assigned_to uuid [ref: > admin_users.admin_id]
+  assigned_at timestamp
+  first_response_at timestamp
+  resolved_at timestamp
+  closed_at timestamp
+  resolution_notes text
+  customer_satisfaction_rating int [note: '1-5']
+  customer_feedback text
+  attachments json [note: 'array of attachment URLs']
+  tags json
+  internal_notes text
+  escalated boolean [default: false]
+  escalated_to uuid [ref: > admin_users.admin_id]
+  escalated_at timestamp
+  sla_due_date timestamp
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    user_id
+    ticket_number
+    status
+    priority
+    (status, priority)
+    assigned_to
+  }
+
+  Note: 'Customer support ticket management'
+}
+
+Table ticket_messages {
+  message_id uuid [primary key]
+  ticket_id uuid [ref: > support_tickets.ticket_id, not null]
+  sender_id uuid [ref: > users.user_id, not null]
+  sender_type varchar(20) [note: 'customer, admin, system']
+  message text [not null]
+  attachments json
+  is_internal boolean [default: false, note: 'internal admin notes']
+  is_read boolean [default: false]
+  read_at timestamp
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    ticket_id
+    created_at
+  }
+  
+  Note: 'Ticket conversation threads'
+}
+Table admin_users {
+  admin_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, unique, not null]
+  full_name varchar(255) [not null]
+  email varchar(255) [unique, not null]
+  phone varchar(15)
+  photo_url varchar(500)
+  role varchar(50) [note: 'super_admin, operations_manager, support_agent, finance_manager, care_coordinator']
+  department varchar(50)
+  permissions json [note: 'granular permissions']
+  can_access_finance boolean [default: false]
+  can_manage_users boolean [default: false]
+  can_manage_caregivers boolean [default: false]
+  can_manage_content boolean [default: false]
+  reporting_to uuid [ref: > admin_users.admin_id]
+  is_active boolean [default: true]
+  joined_date date [default: 'now()']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    user_id
+    role
+    is_active
+  }
+
+  Note: 'Admin/staff user accounts'
+}
+
+Table audit_logs {
+  log_id uuid [primary key]
+  user_id uuid [ref: > users.user_id]
+  admin_id uuid [ref: > admin_users.admin_id]
+  action varchar(100) [not null, note: 'create, update, delete, view, login, logout']
+  entity_type varchar(50) [note: 'booking, subscription, payment, user, pet, caregiver']
+  entity_id uuid
+  old_value json [note: 'previous state']
+  new_value json [note: 'new state']
+  changes_summary text
+  ip_address varchar(45)
+  user_agent text
+  geolocation json
+  request_method varchar(10)
+  request_url text
+  response_status int
+  severity varchar(20) [default: 'info', note: 'info, warning, error, critical']
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    user_id
+    admin_id
+    entity_type
+    entity_id
+    action
+    created_at
+    (entity_type, entity_id)
+  }
+
+  Note: 'Complete audit trail of all system actions'
+}
+
+// ========================================
+// CONFIGURATION TABLES
+// ========================================
+
+Table pricing_rules {
+  rule_id uuid [primary key]
+  rule_name varchar(255) [not null]
+  service_id uuid [ref: > service_catalog.service_id]
+  tier_id smallint [ref: > subscription_tiers_ref.tier_id]
+  species_id smallint [ref: > species_ref.species_id]
+  life_stage_id smallint [ref: > life_stages_ref.life_stage_id]
+  location_type_id smallint [ref: > location_types_ref.location_type_id]
+  price_modifier decimal(10,2) [note: 'amount to add/subtract']
+  modifier_type varchar(20) [note: 'percentage, fixed_amount']
+  day_of_week int [note: 'for weekend pricing, etc']
+  time_start time
+  time_end time
+  min_booking_value decimal(10,2)
+  max_booking_value decimal(10,2)
+  is_active boolean [default: true]
+  priority int [default: 0, note: 'higher priority rules apply first']
+  valid_from date
+  valid_until date
+  description text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    (service_id, tier_id)
+    (valid_from, valid_until)
+    is_active
+  }
+
+  Note: 'Dynamic pricing rules based on multiple factors'
+}
+
+Table fair_usage_policies {
+  policy_id uuid [primary key]
+  tier_id smallint [ref: > subscription_tiers_ref.tier_id, not null]
+  category_id smallint [ref: > service_categories_ref.category_id, not null]
+  max_usage_per_month int [note: 'for unlimited services']
+  max_usage_per_week int
+  max_usage_per_day int
+  cooldown_period_days int [note: 'minimum days between same service']
+  cooldown_period_hours int
+  abuse_threshold int [note: 'flag if user exceeds this']
+  abuse_action varchar(50) [note: 'warn, block, manual_review']
+  description text
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    tier_id
+    (tier_id, category_id)
+  }
+
+  Note: 'Fair usage policies for unlimited services'
+}
+
+Table promo_codes {
+  promo_id uuid [primary key]
+  promo_code varchar(50) [unique, not null]
+  promo_name varchar(255) [not null]
+  description text
+  discount_type varchar(20) [note: 'percentage, fixed_amount']
+  discount_value decimal(10,2) [not null]
+  max_discount_amount decimal(10,2)
+  min_purchase_amount decimal(10,2)
+  applicable_to varchar(30) [note: 'subscription, service, all']
+  tier_ids json [note: 'array of applicable tier_ids']
+  service_ids json [note: 'array of applicable service_ids']
+  max_uses_total int
+  max_uses_per_user int [default: 1]
+  current_uses int [default: 0]
+  is_active boolean [default: true]
+  valid_from date [not null]
+  valid_until date [not null]
+  created_by uuid [ref: > admin_users.admin_id]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    promo_code
+    (is_active, valid_from, valid_until)
+  }
+
+  Note: 'Promotional discount codes'
+}
+
+Table promo_code_usage {
+  usage_id uuid [primary key]
+  promo_id uuid [ref: > promo_codes.promo_id, not null]
+  user_id uuid [ref: > users.user_id, not null]
+  subscription_id uuid [ref: > subscriptions.subscription_id]
+  booking_id uuid [ref: > bookings.booking_id]
+  invoice_id uuid [ref: > invoices.invoice_id]
+  discount_applied decimal(10,2) [not null]
+  used_at timestamp [default: `now()`]
+
+  indexes {
+    promo_id
+    user_id
+    (promo_id, user_id)
+  }
+
+  Note: 'Track promo code usage'
+}
+
+Table app_settings {
+  setting_id uuid [primary key]
+  setting_key varchar(100) [unique, not null]
+  setting_value text [not null]
+  setting_type varchar(20) [note: 'string, number, boolean, json']
+  category varchar(50) [note: 'general, payment, notification, business_rules']
+  description text
+  is_public boolean [default: false, note: 'visible to frontend']
+  updated_by uuid [ref: > admin_users.admin_id]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    setting_key
+    category
+  }
+
+  Note: 'Global app configuration settings'
+}
+
+Table system_alerts {
+  alert_id uuid [primary key]
+  alert_type varchar(50) [note: 'maintenance, outage, feature_launch, urgent']
+  title varchar(255) [not null]
+  message text [not null]
+  severity varchar(20) [note: 'info, warning, critical']
+  display_location varchar(50) [note: 'banner, modal, notification']
+  target_audience varchar(30) [note: 'all, customers, caregivers, admins']
+  is_active boolean [default: true]
+  start_time timestamp [not null]
+  end_time timestamp
+  created_by uuid [ref: > admin_users.admin_id]
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    (is_active, start_time, end_time)
+    alert_type
+  }
+
+  Note: 'System-wide alerts and announcements'
+}
+
+// ========================================
+// ANALYTICS & REPORTING
+// ========================================
+
+Table user_behavior_analytics {
+  analytics_id uuid [primary key]
+  user_id uuid [ref: > users.user_id]
+  session_id uuid [ref: > sessions.session_id]
+  event_type varchar(50) [note: 'page_view, button_click, service_view, search']
+  event_name varchar(100)
+  page_url varchar(500)
+  referrer_url varchar(500)
+  event_data json
+  device_type varchar(20)
+  browser varchar(50)
+  os varchar(50)
+  timestamp timestamp [default: `now()`]
+
+  indexes {
+    user_id
+    event_type
+    timestamp
+  }
+
+  Note: 'User behavior tracking for analytics'
+}
+
+Table business_metrics {
+  metric_id uuid [primary key]
+  metric_date date [not null]
+  metric_type varchar(50) [note: 'daily_revenue, active_subscriptions, bookings_count, nps_score']
+  metric_value decimal(15,2) [not null]
+  breakdown json [note: 'detailed breakdown by category']
+  calculated_at timestamp [default: `now()`]
+
+  indexes {
+    metric_date
+    metric_type
+    (metric_type, metric_date)
+  }
+
+  Note: 'Pre-calculated business metrics for reporting'
+}
+
