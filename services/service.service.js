@@ -6,6 +6,7 @@
 const { pool } = require('../config/database');
 const { AppError } = require('../utils/response.util');
 const { v4: uuidv4 } = require('uuid');
+const paymentService = require('./payment.service');
 
 class ServiceService {
   // ==================== SERVICE CATALOG ====================
@@ -399,6 +400,51 @@ class ServiceService {
       ]);
 
       const booking = bookingResult.rows[0];
+
+      // Get service details for invoice
+      const serviceDetails = await client.query(
+        'SELECT service_name FROM service_catalog WHERE service_id = $1',
+        [service_id]
+      );
+      const serviceName = serviceDetails.rows[0].service_name;
+
+      // Build invoice line items
+      const lineItems = [];
+
+      // Add service as line item (if not free with subscription)
+      if (baseAmount > 0) {
+        lineItems.push({
+          item_type: 'service',
+          description: serviceName,
+          quantity: 1,
+          unit_price: parseFloat(baseAmount),
+          tax_applicable: true
+        });
+      }
+
+      // Add addons as line items
+      if (addons && addons.length > 0) {
+        addons.forEach(addon => {
+          lineItems.push({
+            item_type: 'addon',
+            description: `${addon.addon_name}${addon.addon_description ? ` - ${addon.addon_description}` : ''}`,
+            quantity: addon.quantity,
+            unit_price: parseFloat(addon.unit_price),
+            tax_applicable: true
+          });
+        });
+      }
+
+      // Create invoice
+      await paymentService.createInvoice({
+        user_id: userId,
+        booking_id: booking.booking_id,
+        invoice_type: 'service',
+        line_items: lineItems,
+        tax_percentage: 18,
+        discount_amount: 0,
+        due_date: new Date() // Due immediately
+      }, client);
 
       // Insert addons
       if (addons && addons.length > 0) {
