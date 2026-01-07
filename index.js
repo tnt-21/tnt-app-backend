@@ -20,6 +20,7 @@ const petRoutes = require('./routes/v1/pet.routes'); // Import pet routes
 const subscriptionRoutes = require('./routes/v1/subscription.routes');
 const paymentRoutes = require('./routes/v1/payment.routes');
 const adminRoutes = require('./routes/v1/admin.routes');
+const serviceRoutes = require('./routes/v1/service.routes'); // Import service routes
 
 // Import cron jobs
 const { initPetLifeStageJob } = require('./cron/pet.cron');
@@ -84,7 +85,8 @@ app.get('/', (req, res) => {
       users: `/api/${API_VERSION}/users`, // NEW: Add users endpoint
       pets: `/api/${API_VERSION}/pets`,
       subscriptions: `/api/${API_VERSION}/subscriptions`,
-      payments: `/api/${API_VERSION}/payments`
+      payments: `/api/${API_VERSION}/payments`,
+      services: `/api/${API_VERSION}/services`
     }
   });
 });
@@ -115,6 +117,7 @@ app.use(`/api/${API_VERSION}/pets`, petRoutes);
 app.use(`/api/${API_VERSION}/subscriptions`, subscriptionRoutes);
 app.use(`/api/${API_VERSION}/payments`, paymentRoutes);
 app.use(`/api/${API_VERSION}/admin`, adminRoutes);
+app.use(`/api/${API_VERSION}/services`, serviceRoutes); // Mount service routes
 
 // 404 Handler
 app.use((req, res) => {

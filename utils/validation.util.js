@@ -838,6 +838,138 @@ const applyPromoCodeSchema = Joi.object({
 });
 
 
+// ==================== BOOKING VALIDATION SCHEMAS ====================
+
+const createBookingSchema = Joi.object({
+  pet_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid pet ID format',
+      'any.required': 'Pet ID is required'
+    }),
+
+  service_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid service ID format',
+      'any.required': 'Service ID is required'
+    }),
+
+  booking_date: Joi.date().min('now').required()
+    .messages({
+      'date.base': 'Invalid booking date',
+      'date.min': 'Booking date cannot be in the past',
+      'any.required': 'Booking date is required'
+    }),
+
+  booking_time: Joi.string()
+    .pattern(/^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Time must be in HH:MM:SS format',
+      'any.required': 'Booking time is required'
+    }),
+
+  location_type_id: Joi.number().integer().min(1).max(2).required()
+    .messages({
+      'number.base': 'Location type must be a number',
+      'number.min': 'Invalid location type',
+      'number.max': 'Invalid location type',
+      'any.required': 'Location type is required'
+    }),
+
+  address_id: Joi.string().uuid().optional()
+    .messages({
+      'string.guid': 'Invalid address ID format'
+    }),
+
+  specific_location_notes: Joi.string().max(500).allow('', null).optional()
+    .messages({
+      'string.max': 'Location notes too long'
+    }),
+
+  special_instructions: Joi.string().max(1000).allow('', null).optional()
+    .messages({
+      'string.max': 'Special instructions too long'
+    }),
+
+  pet_behavior_notes: Joi.string().max(1000).allow('', null).optional()
+    .messages({
+      'string.max': 'Behavior notes too long'
+    }),
+
+  use_subscription: Joi.boolean().default(false)
+    .messages({
+      'boolean.base': 'Use subscription must be true or false'
+    }),
+
+  addons: Joi.array().items(Joi.object({
+    addon_type: Joi.string().valid('product', 'service_upgrade', 'extra_service').required(),
+    addon_name: Joi.string().max(255).required(),
+    addon_description: Joi.string().max(500).allow('', null).optional(),
+    unit_price: Joi.number().positive().required(),
+    quantity: Joi.number().integer().min(1).default(1)
+  })).optional()
+});
+
+const cancelBookingSchema = Joi.object({
+  reason: Joi.string().min(10).max(500).required()
+    .messages({
+      'string.min': 'Please provide a reason (at least 10 characters)',
+      'string.max': 'Reason too long (max 500 characters)',
+      'any.required': 'Cancellation reason is required'
+    })
+});
+
+const rescheduleBookingSchema = Joi.object({
+  new_date: Joi.date().min('now').required()
+    .messages({
+      'date.base': 'Invalid date',
+      'date.min': 'New date cannot be in the past',
+      'any.required': 'New date is required'
+    }),
+
+  new_time: Joi.string()
+    .pattern(/^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Time must be in HH:MM:SS format',
+      'any.required': 'New time is required'
+    }),
+
+  reason: Joi.string().min(10).max(500).required()
+    .messages({
+      'string.min': 'Please provide a reason (at least 10 characters)',
+      'string.max': 'Reason too long (max 500 characters)',
+      'any.required': 'Rescheduling reason is required'
+    })
+});
+
+const calculateBookingPriceSchema = Joi.object({
+  service_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid service ID format',
+      'any.required': 'Service ID is required'
+    }),
+
+  pet_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid pet ID format',
+      'any.required': 'Pet ID is required'
+    }),
+
+  addons: Joi.array().items(Joi.object({
+    addon_type: Joi.string().valid('product', 'service_upgrade', 'extra_service').required(),
+    addon_name: Joi.string().max(255).required(),
+    addon_description: Joi.string().max(500).allow('', null).optional(),
+    unit_price: Joi.number().positive().required(),
+    quantity: Joi.number().integer().min(1).default(1)
+  })).optional(),
+
+  promo_code: Joi.string().uppercase().max(50).optional()
+    .messages({
+      'string.max': 'Promo code too long'
+    })
+});
+
 
 module.exports = {
   updateProfileSchema,
@@ -889,5 +1021,11 @@ module.exports = {
     verifyPaymentSchema,
     requestRefundSchema,
     createInvoiceSchema,
-    applyPromoCodeSchema
+    applyPromoCodeSchema,
+
+    // service booking schemas
+    createBookingSchema,
+    cancelBookingSchema,
+    rescheduleBookingSchema,
+    calculateBookingPriceSchema
 };
