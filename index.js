@@ -21,6 +21,8 @@ const subscriptionRoutes = require('./routes/v1/subscription.routes');
 const paymentRoutes = require('./routes/v1/payment.routes');
 const adminRoutes = require('./routes/v1/admin.routes');
 const serviceRoutes = require('./routes/v1/service.routes'); // Import service routes
+const caregiverRoutes = require('./routes/v1/caregiver.routes'); // Import caregiver routes
+const careManagerRoutes = require('./routes/v1/careManager.routes'); // Import care manager routes
 
 // Import cron jobs
 const { initPetLifeStageJob } = require('./cron/pet.cron');
@@ -86,7 +88,9 @@ app.get('/', (req, res) => {
       pets: `/api/${API_VERSION}/pets`,
       subscriptions: `/api/${API_VERSION}/subscriptions`,
       payments: `/api/${API_VERSION}/payments`,
-      services: `/api/${API_VERSION}/services`
+      services: `/api/${API_VERSION}/services`,
+      caregivers: `/api/${API_VERSION}/caregivers`,
+      careManagers: `/api/${API_VERSION}/care-managers`
     }
   });
 });
@@ -118,6 +122,8 @@ app.use(`/api/${API_VERSION}/subscriptions`, subscriptionRoutes);
 app.use(`/api/${API_VERSION}/payments`, paymentRoutes);
 app.use(`/api/${API_VERSION}/admin`, adminRoutes);
 app.use(`/api/${API_VERSION}/services`, serviceRoutes); // Mount service routes
+app.use(`/api/${API_VERSION}/caregivers`, caregiverRoutes); // Mount caregiver routes
+app.use(`/api/${API_VERSION}/care-managers`, careManagerRoutes); // Mount care manager routes
 
 // 404 Handler
 app.use((req, res) => {
