@@ -32,6 +32,8 @@ const analyticsRoutes = require('./routes/v1/analytics.routes');
 
 // Import cron jobs
 const { initPetLifeStageJob } = require('./cron/pet.cron');
+// Import keep alive cron job for render
+const { initKeepAliveJob } = require('./cron/keep_alive.cron');
 
 // Import error handler
 const { errorHandler } = require('./middlewares/error.middleware');
@@ -159,6 +161,7 @@ async function startServer() {
     
     // Initialize Cron Jobs
     initPetLifeStageJob();
+    initKeepAliveJob();
     
     server = app.listen(PORT, () => {
       console.log(`
