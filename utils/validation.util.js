@@ -45,24 +45,24 @@ const updatePreferencesSchema = Joi.object({
   theme: Joi.string().valid("light", "dark", "auto"),
 });
 
-const updateNotificationPreferencesSchema = Joi.object({
-  booking_confirmations: Joi.boolean(),
-  booking_reminders: Joi.boolean(),
-  health_reminders: Joi.boolean(),
-  vaccination_reminders: Joi.boolean(),
-  medication_reminders: Joi.boolean(),
-  subscription_updates: Joi.boolean(),
-  payment_alerts: Joi.boolean(),
-  promotional: Joi.boolean(),
-  community_events: Joi.boolean(),
-  care_manager_updates: Joi.boolean(),
-  sms_enabled: Joi.boolean(),
-  email_enabled: Joi.boolean(),
-  push_enabled: Joi.boolean(),
-  whatsapp_enabled: Joi.boolean(),
-  quiet_hours_start: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/),
-  quiet_hours_end: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/),
-});
+// const updateNotificationPreferencesSchema = Joi.object({
+//   booking_confirmations: Joi.boolean(),
+//   booking_reminders: Joi.boolean(),
+//   health_reminders: Joi.boolean(),
+//   vaccination_reminders: Joi.boolean(),
+//   medication_reminders: Joi.boolean(),
+//   subscription_updates: Joi.boolean(),
+//   payment_alerts: Joi.boolean(),
+//   promotional: Joi.boolean(),
+//   community_events: Joi.boolean(),
+//   care_manager_updates: Joi.boolean(),
+//   sms_enabled: Joi.boolean(),
+//   email_enabled: Joi.boolean(),
+//   push_enabled: Joi.boolean(),
+//   whatsapp_enabled: Joi.boolean(),
+//   quiet_hours_start: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/),
+//   quiet_hours_end: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/),
+// });
 
 const updatePhoneSchema = Joi.object({
   new_phone: Joi.string()
@@ -1199,12 +1199,631 @@ const scheduleCheckInSchema = Joi.object({
   }),
 });
 
+// ==================== TRACKING VALIDATION SCHEMAS ====================
+
+const startTrackingSessionSchema = Joi.object({
+  booking_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid booking ID format',
+      'any.required': 'Booking ID is required'
+    }),
+  pet_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid pet ID format',
+      'any.required': 'Pet ID is required'
+    }),
+  session_type: Joi.string()
+    .valid('service_tracking', 'continuous_tracking')
+    .default('service_tracking')
+    .messages({
+      'any.only': 'Session type must be either service_tracking or continuous_tracking'
+    })
+});
+
+const updateLocationSchema = Joi.object({
+  latitude: Joi.number().min(-90).max(90).required()
+    .messages({
+      'number.base': 'Latitude must be a number',
+      'number.min': 'Latitude must be between -90 and 90',
+      'number.max': 'Latitude must be between -90 and 90',
+      'any.required': 'Latitude is required'
+    }),
+  longitude: Joi.number().min(-180).max(180).required()
+    .messages({
+      'number.base': 'Longitude must be a number',
+      'number.min': 'Longitude must be between -180 and 180',
+      'number.max': 'Longitude must be between -180 and 180',
+      'any.required': 'Longitude is required'
+    }),
+  accuracy: Joi.number().positive().allow(null).optional()
+    .messages({
+      'number.positive': 'Accuracy must be positive'
+    }),
+  altitude: Joi.number().allow(null).optional(),
+  speed: Joi.number().min(0).max(200).allow(null).optional()
+    .messages({
+      'number.min': 'Speed cannot be negative',
+      'number.max': 'Speed seems unrealistic (max 200 km/h)'
+    }),
+  heading: Joi.number().min(0).max(360).allow(null).optional()
+    .messages({
+      'number.min': 'Heading must be between 0 and 360',
+      'number.max': 'Heading must be between 0 and 360'
+    }),
+  battery_level: Joi.number().integer().min(0).max(100).allow(null).optional()
+    .messages({
+      'number.min': 'Battery level must be between 0 and 100',
+      'number.max': 'Battery level must be between 0 and 100'
+    })
+});
+
+const calculateETASchema = Joi.object({
+  destination_lat: Joi.number().min(-90).max(90).required()
+    .messages({
+      'number.base': 'Destination latitude must be a number',
+      'number.min': 'Destination latitude must be between -90 and 90',
+      'number.max': 'Destination latitude must be between -90 and 90',
+      'any.required': 'Destination latitude is required'
+    }),
+  destination_lng: Joi.number().min(-180).max(180).required()
+    .messages({
+      'number.base': 'Destination longitude must be a number',
+      'number.min': 'Destination longitude must be between -180 and 180',
+      'number.max': 'Destination longitude must be between -180 and 180',
+      'any.required': 'Destination longitude is required'
+    })
+});
+
+// ==================== NOTIFICATION VALIDATION SCHEMAS ====================
+
+const updateNotificationPreferencesSchema = Joi.object({
+  booking_confirmations: Joi.boolean().optional(),
+  booking_reminders: Joi.boolean().optional(),
+  health_reminders: Joi.boolean().optional(),
+  vaccination_reminders: Joi.boolean().optional(),
+  medication_reminders: Joi.boolean().optional(),
+  subscription_updates: Joi.boolean().optional(),
+  payment_alerts: Joi.boolean().optional(),
+  promotional: Joi.boolean().optional(),
+  community_events: Joi.boolean().optional(),
+  care_manager_updates: Joi.boolean().optional(),
+  sms_enabled: Joi.boolean().optional(),
+  email_enabled: Joi.boolean().optional(),
+  push_enabled: Joi.boolean().optional(),
+  whatsapp_enabled: Joi.boolean().optional(),
+  quiet_hours_start: Joi.string()
+    .pattern(/^([01]\d|2[0-3]):([0-5]\d)$/)
+    .allow(null, '')
+    .optional()
+    .messages({
+      'string.pattern.base': 'Quiet hours start must be in HH:MM format (24-hour)'
+    }),
+  quiet_hours_end: Joi.string()
+    .pattern(/^([01]\d|2[0-3]):([0-5]\d)$/)
+    .allow(null, '')
+    .optional()
+    .messages({
+      'string.pattern.base': 'Quiet hours end must be in HH:MM format (24-hour)'
+    })
+}).min(1);
+
+const sendNotificationSchema = Joi.object({
+  user_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid user ID format',
+      'any.required': 'User ID is required'
+    }),
+  notification_type: Joi.string()
+    .valid(
+      'booking_confirmation', 'booking_reminder', 'health_reminder',
+      'vaccination_reminder', 'medication_reminder', 'subscription_update',
+      'payment_alert', 'promo', 'update', 'community_event',
+      'care_manager_update', 'emergency'
+    )
+    .required()
+    .messages({
+      'any.only': 'Invalid notification type',
+      'any.required': 'Notification type is required'
+    }),
+  priority: Joi.string()
+    .valid('low', 'normal', 'high', 'urgent')
+    .default('normal')
+    .optional(),
+  title: Joi.string().min(1).max(255).required()
+    .messages({
+      'string.empty': 'Title is required',
+      'string.max': 'Title must not exceed 255 characters',
+      'any.required': 'Title is required'
+    }),
+  message: Joi.string().min(1).max(1000).required()
+    .messages({
+      'string.empty': 'Message is required',
+      'string.max': 'Message must not exceed 1000 characters',
+      'any.required': 'Message is required'
+    }),
+  rich_content: Joi.object().allow(null).optional(),
+  action_type: Joi.string()
+    .valid('open_booking', 'open_subscription', 'open_pet', 'open_url', 'none')
+    .allow(null, '')
+    .optional(),
+  action_url: Joi.string().uri().allow(null, '').optional(),
+  action_data: Joi.object().allow(null).optional(),
+  delivery_method: Joi.string()
+    .valid('push', 'sms', 'email', 'whatsapp', 'in_app')
+    .default('push')
+    .optional(),
+  expires_at: Joi.date().min('now').allow(null).optional()
+    .messages({
+      'date.min': 'Expiry date must be in the future'
+    })
+});
+
+const sendTemplateNotificationSchema = Joi.object({
+  user_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid user ID format',
+      'any.required': 'User ID is required'
+    }),
+  template_code: Joi.string().min(1).max(50).required()
+    .messages({
+      'string.empty': 'Template code is required',
+      'string.max': 'Template code too long',
+      'any.required': 'Template code is required'
+    }),
+  variables: Joi.object().default({}).optional()
+    .messages({
+      'object.base': 'Variables must be an object'
+    }),
+  delivery_method: Joi.string()
+    .valid('push', 'sms', 'email', 'whatsapp', 'in_app')
+    .default('push')
+    .optional()
+});
+
+const sendBulkNotificationsSchema = Joi.object({
+  user_ids: Joi.array()
+    .items(Joi.string().uuid())
+    .min(1)
+    .max(1000)
+    .required()
+    .messages({
+      'array.base': 'user_ids must be an array',
+      'array.min': 'At least one user ID is required',
+      'array.max': 'Cannot send to more than 1000 users at once',
+      'any.required': 'user_ids is required'
+    }),
+  notification_type: Joi.string()
+    .valid(
+      'booking_confirmation', 'booking_reminder', 'health_reminder',
+      'vaccination_reminder', 'medication_reminder', 'subscription_update',
+      'payment_alert', 'promo', 'update', 'community_event',
+      'care_manager_update', 'emergency'
+    )
+    .required()
+    .messages({
+      'any.only': 'Invalid notification type',
+      'any.required': 'Notification type is required'
+    }),
+  priority: Joi.string()
+    .valid('low', 'normal', 'high', 'urgent')
+    .default('normal')
+    .optional(),
+  title: Joi.string().min(1).max(255).required()
+    .messages({
+      'string.empty': 'Title is required',
+      'any.required': 'Title is required'
+    }),
+  message: Joi.string().min(1).max(1000).required()
+    .messages({
+      'string.empty': 'Message is required',
+      'any.required': 'Message is required'
+    }),
+  delivery_method: Joi.string()
+    .valid('push', 'sms', 'email', 'whatsapp', 'in_app')
+    .default('push')
+    .optional()
+});
+
+// ==================== COMMUNITY EVENT SCHEMAS ====================
+
+const registerForEventSchema = Joi.object({
+  pet_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid pet ID format',
+      'any.required': 'Pet ID is required'
+    }),
+  special_requirements: Joi.string().max(500).allow(null, '').optional()
+    .messages({
+      'string.max': 'Special requirements too long (max 500 characters)'
+    }),
+  emergency_contact_name: Joi.string().max(255).allow(null, '').optional()
+    .messages({
+      'string.max': 'Emergency contact name too long'
+    }),
+  emergency_contact_phone: Joi.string()
+    .pattern(/^(\+91)?[6-9]\d{9}$/)
+    .allow(null, '')
+    .optional()
+    .messages({
+      'string.pattern.base': 'Invalid phone number format'
+    })
+});
+
+const cancelEventRegistrationSchema = Joi.object({
+  cancellation_reason: Joi.string().min(5).max(500).required()
+    .messages({
+      'string.empty': 'Cancellation reason is required',
+      'string.min': 'Reason must be at least 5 characters',
+      'string.max': 'Reason too long (max 500 characters)',
+      'any.required': 'Cancellation reason is required'
+    })
+});
+
+const submitEventFeedbackSchema = Joi.object({
+  feedback_rating: Joi.number().integer().min(1).max(5).required()
+    .messages({
+      'number.base': 'Rating must be a number',
+      'number.min': 'Rating must be between 1 and 5',
+      'number.max': 'Rating must be between 1 and 5',
+      'any.required': 'Rating is required'
+    }),
+  feedback_text: Joi.string().max(1000).allow(null, '').optional()
+    .messages({
+      'string.max': 'Feedback too long (max 1000 characters)'
+    })
+});
+
+const joinWaitlistSchema = Joi.object({
+  pet_id: Joi.string().uuid().required()
+    .messages({
+      'string.guid': 'Invalid pet ID format',
+      'any.required': 'Pet ID is required'
+    }),
+  special_requirements: Joi.string().max(500).allow(null, '').optional()
+    .messages({
+      'string.max': 'Special requirements too long (max 500 characters)'
+    })
+});
+
+// ==================== SUPPORT TICKET SCHEMAS ====================
+
+const createTicketSchema = Joi.object({
+  subject: Joi.string().min(5).max(255).required()
+    .messages({
+      'string.empty': 'Subject is required',
+      'string.min': 'Subject must be at least 5 characters',
+      'string.max': 'Subject too long (max 255 characters)',
+      'any.required': 'Subject is required'
+    }),
+  description: Joi.string().min(10).max(5000).required()
+    .messages({
+      'string.empty': 'Description is required',
+      'string.min': 'Description must be at least 10 characters',
+      'string.max': 'Description too long (max 5000 characters)',
+      'any.required': 'Description is required'
+    }),
+  category: Joi.string()
+    .valid('technical', 'billing', 'service_quality', 'complaint', 'inquiry', 'feedback')
+    .required()
+    .messages({
+      'any.only': 'Invalid category',
+      'any.required': 'Category is required'
+    }),
+  subcategory: Joi.string().max(50).allow(null, '').optional()
+    .messages({
+      'string.max': 'Subcategory too long'
+    }),
+  priority: Joi.string()
+    .valid('low', 'medium', 'high', 'urgent')
+    .default('medium')
+    .messages({
+      'any.only': 'Invalid priority level'
+    }),
+  channel: Joi.string()
+    .valid('app', 'email', 'phone', 'chat', 'whatsapp')
+    .default('app')
+    .messages({
+      'any.only': 'Invalid channel'
+    }),
+  booking_id: Joi.string().uuid().allow(null).optional()
+    .messages({
+      'string.guid': 'Invalid booking ID format'
+    }),
+  subscription_id: Joi.string().uuid().allow(null).optional()
+    .messages({
+      'string.guid': 'Invalid subscription ID format'
+    }),
+  pet_id: Joi.string().uuid().allow(null).optional()
+    .messages({
+      'string.guid': 'Invalid pet ID format'
+    }),
+  attachments: Joi.array()
+    .items(Joi.string().uri())
+    .max(5)
+    .allow(null)
+    .optional()
+    .messages({
+      'array.max': 'Maximum 5 attachments allowed'
+    })
+});
+
+const addTicketMessageSchema = Joi.object({
+  message: Joi.string().min(1).max(5000).required()
+    .messages({
+      'string.empty': 'Message is required',
+      'string.max': 'Message too long (max 5000 characters)',
+      'any.required': 'Message is required'
+    }),
+  attachments: Joi.array()
+    .items(Joi.string().uri())
+    .max(5)
+    .allow(null)
+    .optional()
+    .messages({
+      'array.max': 'Maximum 5 attachments allowed'
+    })
+});
+
+const closeTicketSchema = Joi.object({
+  customer_satisfaction_rating: Joi.number().integer().min(1).max(5).optional()
+    .messages({
+      'number.base': 'Rating must be a number',
+      'number.min': 'Rating must be between 1 and 5',
+      'number.max': 'Rating must be between 1 and 5'
+    }),
+  customer_feedback: Joi.string().max(1000).allow(null, '').optional()
+    .messages({
+      'string.max': 'Feedback too long (max 1000 characters)'
+    })
+});
+
+const reopenTicketSchema = Joi.object({
+  reason: Joi.string().min(10).max(500).required()
+    .messages({
+      'string.empty': 'Reason is required',
+      'string.min': 'Reason must be at least 10 characters',
+      'string.max': 'Reason too long (max 500 characters)',
+      'any.required': 'Reason for reopening is required'
+    })
+});
+
+
+// ==================== PRICING RULES ====================
+
+const createPricingRuleSchema = Joi.object({
+  rule_name: Joi.string().min(1).max(255).required()
+    .messages({
+      'string.empty': 'Rule name is required',
+      'any.required': 'Rule name is required'
+    }),
+  service_id: Joi.string().uuid().optional().allow(null),
+  tier_id: Joi.number().integer().min(1).max(3).optional().allow(null),
+  species_id: Joi.number().integer().positive().optional().allow(null),
+  life_stage_id: Joi.number().integer().positive().optional().allow(null),
+  location_type_id: Joi.number().integer().positive().optional().allow(null),
+  price_modifier: Joi.number().allow(null).optional(),
+  modifier_type: Joi.string().valid('percentage', 'fixed_amount').optional().allow(null),
+  day_of_week: Joi.number().integer().min(0).max(6).optional().allow(null),
+  time_start: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).optional().allow(null),
+  time_end: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).optional().allow(null),
+  min_booking_value: Joi.number().positive().optional().allow(null),
+  max_booking_value: Joi.number().positive().optional().allow(null),
+  priority: Joi.number().integer().min(0).default(0),
+  valid_from: Joi.date().optional().allow(null),
+  valid_until: Joi.date().min(Joi.ref('valid_from')).optional().allow(null),
+  description: Joi.string().allow(null, '').optional()
+});
+
+const updatePricingRuleSchema = Joi.object({
+  rule_name: Joi.string().min(1).max(255).optional(),
+  service_id: Joi.string().uuid().optional().allow(null),
+  tier_id: Joi.number().integer().min(1).max(3).optional().allow(null),
+  species_id: Joi.number().integer().positive().optional().allow(null),
+  life_stage_id: Joi.number().integer().positive().optional().allow(null),
+  location_type_id: Joi.number().integer().positive().optional().allow(null),
+  price_modifier: Joi.number().allow(null).optional(),
+  modifier_type: Joi.string().valid('percentage', 'fixed_amount').optional().allow(null),
+  day_of_week: Joi.number().integer().min(0).max(6).optional().allow(null),
+  time_start: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).optional().allow(null),
+  time_end: Joi.string().pattern(/^([01]\d|2[0-3]):([0-5]\d)$/).optional().allow(null),
+  min_booking_value: Joi.number().positive().optional().allow(null),
+  max_booking_value: Joi.number().positive().optional().allow(null),
+  is_active: Joi.boolean().optional(),
+  priority: Joi.number().integer().min(0).optional(),
+  valid_from: Joi.date().optional().allow(null),
+  valid_until: Joi.date().optional().allow(null),
+  description: Joi.string().allow(null, '').optional()
+}).min(1);
+
+// ==================== FAIR USAGE POLICIES ====================
+
+const createFairUsagePolicySchema = Joi.object({
+  tier_id: Joi.number().integer().min(1).max(3).required()
+    .messages({
+      'any.required': 'Tier ID is required'
+    }),
+  category_id: Joi.number().integer().positive().required()
+    .messages({
+      'any.required': 'Category ID is required'
+    }),
+  max_usage_per_month: Joi.number().integer().positive().optional().allow(null),
+  max_usage_per_week: Joi.number().integer().positive().optional().allow(null),
+  max_usage_per_day: Joi.number().integer().positive().optional().allow(null),
+  cooldown_period_days: Joi.number().integer().positive().optional().allow(null),
+  cooldown_period_hours: Joi.number().integer().positive().optional().allow(null),
+  abuse_threshold: Joi.number().integer().positive().optional().allow(null),
+  abuse_action: Joi.string().valid('warn', 'block', 'manual_review').optional().allow(null),
+  description: Joi.string().allow(null, '').optional()
+});
+
+const updateFairUsagePolicySchema = Joi.object({
+  max_usage_per_month: Joi.number().integer().positive().optional().allow(null),
+  max_usage_per_week: Joi.number().integer().positive().optional().allow(null),
+  max_usage_per_day: Joi.number().integer().positive().optional().allow(null),
+  cooldown_period_days: Joi.number().integer().positive().optional().allow(null),
+  cooldown_period_hours: Joi.number().integer().positive().optional().allow(null),
+  abuse_threshold: Joi.number().integer().positive().optional().allow(null),
+  abuse_action: Joi.string().valid('warn', 'block', 'manual_review').optional().allow(null),
+  description: Joi.string().allow(null, '').optional(),
+  is_active: Joi.boolean().optional()
+}).min(1);
+
+// ==================== PROMO CODES ====================
+
+const createPromoCodeSchema = Joi.object({
+  promo_code: Joi.string().uppercase().min(3).max(50).required()
+    .messages({
+      'string.empty': 'Promo code is required',
+      'any.required': 'Promo code is required'
+    }),
+  promo_name: Joi.string().min(1).max(255).required()
+    .messages({
+      'string.empty': 'Promo name is required',
+      'any.required': 'Promo name is required'
+    }),
+  description: Joi.string().allow(null, '').optional(),
+  discount_type: Joi.string().valid('percentage', 'fixed_amount').required()
+    .messages({
+      'any.only': 'Discount type must be percentage or fixed_amount',
+      'any.required': 'Discount type is required'
+    }),
+  discount_value: Joi.number().positive().required()
+    .messages({
+      'number.positive': 'Discount value must be positive',
+      'any.required': 'Discount value is required'
+    }),
+  max_discount_amount: Joi.number().positive().optional().allow(null),
+  min_purchase_amount: Joi.number().positive().optional().allow(null),
+  applicable_to: Joi.string().valid('all', 'subscription', 'service').default('all'),
+  tier_ids: Joi.array().items(Joi.number().integer().positive()).optional().allow(null),
+  service_ids: Joi.array().items(Joi.string().uuid()).optional().allow(null),
+  max_uses_total: Joi.number().integer().positive().optional().allow(null),
+  max_uses_per_user: Joi.number().integer().positive().default(1),
+  valid_from: Joi.date().required()
+    .messages({
+      'any.required': 'Valid from date is required'
+    }),
+  valid_until: Joi.date().min(Joi.ref('valid_from')).required()
+    .messages({
+      'date.min': 'Valid until must be after valid from date',
+      'any.required': 'Valid until date is required'
+    })
+});
+
+const updatePromoCodeSchema = Joi.object({
+  promo_name: Joi.string().min(1).max(255).optional(),
+  description: Joi.string().allow(null, '').optional(),
+  discount_type: Joi.string().valid('percentage', 'fixed_amount').optional(),
+  discount_value: Joi.number().positive().optional(),
+  max_discount_amount: Joi.number().positive().optional().allow(null),
+  min_purchase_amount: Joi.number().positive().optional().allow(null),
+  applicable_to: Joi.string().valid('all', 'subscription', 'service').optional(),
+  tier_ids: Joi.array().items(Joi.number().integer().positive()).optional().allow(null),
+  service_ids: Joi.array().items(Joi.string().uuid()).optional().allow(null),
+  max_uses_total: Joi.number().integer().positive().optional().allow(null),
+  max_uses_per_user: Joi.number().integer().positive().optional(),
+  is_active: Joi.boolean().optional(),
+  valid_from: Joi.date().optional(),
+  valid_until: Joi.date().optional()
+}).min(1);
+
+const validatePromoCodeSchemaForUser = Joi.object({
+  promo_code: Joi.string().uppercase().min(3).max(50).required()
+    .messages({
+      'string.empty': 'Promo code is required',
+      'any.required': 'Promo code is required'
+    }),
+  tier_id: Joi.number().integer().min(1).max(3).optional().allow(null),
+  service_id: Joi.string().uuid().optional().allow(null),
+  amount: Joi.number().positive().required()
+    .messages({
+      'number.positive': 'Amount must be positive',
+      'any.required': 'Amount is required'
+    })
+});
+
+// ==================== APP SETTINGS ====================
+
+const upsertSettingSchema = Joi.object({
+  setting_key: Joi.string().min(1).max(100).required()
+    .messages({
+      'string.empty': 'Setting key is required',
+      'any.required': 'Setting key is required'
+    }),
+  setting_value: Joi.alternatives().try(
+    Joi.string(),
+    Joi.number(),
+    Joi.boolean(),
+    Joi.object()
+  ).required()
+    .messages({
+      'any.required': 'Setting value is required'
+    }),
+  setting_type: Joi.string().valid('string', 'number', 'boolean', 'json').default('string'),
+  category: Joi.string().max(50).default('general'),
+  description: Joi.string().allow(null, '').optional(),
+  is_public: Joi.boolean().default(false)
+});
+
+// ==================== SYSTEM ALERTS ====================
+
+const createAlertSchema = Joi.object({
+  alert_type: Joi.string().valid('maintenance', 'outage', 'feature_launch', 'urgent').required()
+    .messages({
+      'any.only': 'Invalid alert type',
+      'any.required': 'Alert type is required'
+    }),
+  title: Joi.string().min(1).max(255).required()
+    .messages({
+      'string.empty': 'Title is required',
+      'any.required': 'Title is required'
+    }),
+  message: Joi.string().min(1).required()
+    .messages({
+      'string.empty': 'Message is required',
+      'any.required': 'Message is required'
+    }),
+  severity: Joi.string().valid('info', 'warning', 'critical').default('info'),
+  display_location: Joi.string().valid('banner', 'modal', 'notification').default('banner'),
+  target_audience: Joi.string().valid('all', 'customers', 'caregivers', 'admins').default('all'),
+  start_time: Joi.date().required()
+    .messages({
+      'any.required': 'Start time is required'
+    }),
+  end_time: Joi.date().min(Joi.ref('start_time')).optional().allow(null)
+    .messages({
+      'date.min': 'End time must be after start time'
+    })
+});
+
+// ==================== ANALYTICS ====================
+
+const trackEventSchema = Joi.object({
+  event_type: Joi.string().valid(
+    'page_view', 'button_click', 'service_view', 'search',
+    'booking_start', 'booking_complete', 'signup', 'login'
+  ).required()
+    .messages({
+      'any.only': 'Invalid event type',
+      'any.required': 'Event type is required'
+    }),
+  event_name: Joi.string().max(100).optional().allow(null),
+  page_url: Joi.string().uri().optional().allow(null),
+  referrer_url: Joi.string().uri().optional().allow(null),
+  event_data: Joi.object().optional().allow(null),
+  device_type: Joi.string().valid('mobile', 'tablet', 'desktop').optional().allow(null),
+  browser: Joi.string().max(50).optional().allow(null),
+  os: Joi.string().max(50).optional().allow(null)
+});
+
+
+
 module.exports = {
   updateProfileSchema,
   createAddressSchema,
   updateAddressSchema,
   updatePreferencesSchema,
-  updateNotificationPreferencesSchema,
+  // updateNotificationPreferencesSchema,
   updatePhoneSchema,
   updateEmailSchema,
 
@@ -1273,4 +1892,49 @@ module.exports = {
   logInteractionSchema,
   updateInteractionSchema,
   scheduleCheckInSchema,
+
+  // Tracking schemas
+  startTrackingSessionSchema,
+  updateLocationSchema,
+  calculateETASchema,
+  
+  // Notification schemas
+  updateNotificationPreferencesSchema,
+  sendNotificationSchema,
+  sendTemplateNotificationSchema,
+  sendBulkNotificationsSchema,
+
+  // Community event schemas
+  registerForEventSchema,
+  cancelEventRegistrationSchema,
+  submitEventFeedbackSchema,
+  joinWaitlistSchema,
+  
+  // Support ticket schemas
+  createTicketSchema,
+  addTicketMessageSchema,
+  closeTicketSchema,
+  reopenTicketSchema,
+
+    // Pricing rules
+  createPricingRuleSchema,
+  updatePricingRuleSchema,
+
+  // Fair usage
+  createFairUsagePolicySchema,
+  updateFairUsagePolicySchema,
+
+  // Promo codes
+  createPromoCodeSchema,
+  updatePromoCodeSchema,
+  validatePromoCodeSchemaForUser,
+
+  // Settings
+  upsertSettingSchema,
+
+  // Alerts
+  createAlertSchema,
+
+  // Analytics
+  trackEventSchema
 };

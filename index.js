@@ -23,6 +23,12 @@ const adminRoutes = require('./routes/v1/admin.routes');
 const serviceRoutes = require('./routes/v1/service.routes'); // Import service routes
 const caregiverRoutes = require('./routes/v1/caregiver.routes'); // Import caregiver routes
 const careManagerRoutes = require('./routes/v1/careManager.routes'); // Import care manager routes
+const trackingRoutes = require('./routes/v1/tracking.routes');
+const notificationRoutes = require('./routes/v1/notification.routes');
+const communityRoutes = require('./routes/v1/community.routes');
+const supportRoutes = require('./routes/v1/support.routes');
+const configRoutes = require('./routes/v1/config.routes');
+const analyticsRoutes = require('./routes/v1/analytics.routes');
 
 // Import cron jobs
 const { initPetLifeStageJob } = require('./cron/pet.cron');
@@ -124,6 +130,12 @@ app.use(`/api/${API_VERSION}/admin`, adminRoutes);
 app.use(`/api/${API_VERSION}/services`, serviceRoutes); // Mount service routes
 app.use(`/api/${API_VERSION}/caregivers`, caregiverRoutes); // Mount caregiver routes
 app.use(`/api/${API_VERSION}/care-managers`, careManagerRoutes); // Mount care manager routes
+app.use(`/api/${API_VERSION}/tracking`, trackingRoutes);
+app.use(`/api/${API_VERSION}/notifications`, notificationRoutes);
+app.use(`/api/${API_VERSION}/community`, communityRoutes);
+app.use(`/api/${API_VERSION}/support`, supportRoutes);
+app.use(`/api/${API_VERSION}/config`, configRoutes);
+app.use(`/api/${API_VERSION}/analytics`, analyticsRoutes);
 
 // 404 Handler
 app.use((req, res) => {
