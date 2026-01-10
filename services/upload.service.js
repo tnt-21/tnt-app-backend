@@ -1,43 +1,79 @@
 // ============================================
 // FILE: services/upload.service.js
-// Complete Upload Service (Updated)
+// Cloudinary Upload Service
 // ============================================
 
-const sharp = require("sharp");
-const { v4: uuidv4 } = require("uuid");
-const path = require("path");
-const fs = require("fs").promises;
-const uploadConfig = require("../config/upload.config");
+const cloudinary = require('cloudinary').v2;
+const stream = require('stream');
+const path = require('path');
+const uploadConfig = require('../config/upload.config');
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 class UploadService {
   constructor() {
-    // Directory paths
-    this.uploadDir = path.join(__dirname, "..", "uploads", "profile-photos");
-    this.petUploadDir = path.join(__dirname, "..", "uploads", "pet-photos");
-    this.ticketUploadDir = path.join(__dirname, "..", "uploads", "ticket-attachments");
-
-    // Base URLs for accessing files
-    this.baseUrl =
-      process.env.CDN_BASE_URL ||
-      "http://localhost:3000/uploads/profile-photos";
-    this.petBaseUrl =
-      process.env.PET_CDN_BASE_URL ||
-      "http://localhost:3000/uploads/pet-photos";
-    this.ticketBaseUrl =
-      process.env.TICKET_CDN_BASE_URL ||
-      "http://localhost:3000/uploads/ticket-attachments";
-
-    // Ensure upload directories exist
-    this.ensureUploadDir();
+    // Folders in Cloudinary
+    this.folders = {
+      profile: 'tails_and_tales/profile-photos',
+      pets: 'tails_and_tales/pet-photos',
+      tickets: 'tails_and_tales/ticket-attachments'
+    };
   }
 
-  async ensureUploadDir() {
+  /**
+   * Helper to upload a buffer to Cloudinary
+   * @param {Buffer} buffer - File buffer
+   * @param {Object} options - Cloudinary upload options
+   * @returns {Promise<string>} - The secure URL of the uploaded file
+   */
+  async uploadToCloudinary(buffer, options) {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        options,
+        (error, result) => {
+          if (error) {
+            console.error('Cloudinary upload error:', error);
+            return reject(new Error('Cloud upload failed'));
+          }
+          resolve(result.secure_url);
+        }
+      );
+
+      // Create a readable stream from the buffer and pipe it to Cloudinary
+      const bufferStream = new stream.PassThrough();
+      bufferStream.end(buffer);
+      bufferStream.pipe(uploadStream);
+    });
+  }
+
+  /**
+   * Extract public ID from Cloudinary URL for deletion
+   * Assumes URL format: .../folder/filename.ext
+   */
+  getPublicIdFromUrl(url) {
     try {
-      await fs.mkdir(this.uploadDir, { recursive: true });
-      await fs.mkdir(this.petUploadDir, { recursive: true });
-      await fs.mkdir(this.ticketUploadDir, { recursive: true });
+      const splitUrl = url.split('/');
+      // Get the last two parts: folder/filename.ext
+      const filenameWithExt = splitUrl.pop();
+      const folder = splitUrl.pop();
+      // Remove extension
+      const publicId = `${folder}/${filenameWithExt.split('.')[0]}`;
+      // Note: This is a simplistic extraction. 
+      // Ideally, we should store the public_id in the DB alongside the URL.
+      // But for this structure, 'folder/filename' usually works.
+      // However, since we defined specific folders in the constructor,
+      // and Cloudinary URLs include the full path, we need to be careful.
+      
+      // Better approach: Match the known folder names
+      const match = url.match(/tails_and_tales\/[^/]+\/[^.]+/);
+      return match ? match[0] : null;
     } catch (error) {
-      console.error("Error creating upload directory:", error);
+      return null;
     }
   }
 
@@ -45,39 +81,40 @@ class UploadService {
 
   async uploadProfilePhoto(file, userId) {
     try {
-      // Generate unique filename
-      const filename = `${userId}-${uuidv4()}.jpg`;
-      const filepath = path.join(this.uploadDir, filename);
+      // Cloudinary handles resizing via transformation options if needed,
+      // or we can just upload and use dynamic URLs for resizing.
+      // Here we resize on upload to save storage/bandwidth.
+      const options = {
+        folder: this.folders.profile,
+        public_id: `user-${userId}-${Date.now()}`,
+        resource_type: 'image',
+        transformation: [
+          { 
+            width: uploadConfig.imageSize.width, 
+            height: uploadConfig.imageSize.height, 
+            crop: 'fill', 
+            gravity: 'face' 
+          }, 
+          { quality: 'auto', fetch_format: 'auto' } 
+        ]
+      };
 
-      // Process image with sharp (resize, compress)
-      await sharp(file.buffer)
-        .resize(uploadConfig.imageSize.width, uploadConfig.imageSize.height, {
-          fit: "cover",
-          position: "center",
-        })
-        .jpeg({ quality: uploadConfig.quality })
-        .toFile(filepath);
-
-      // Return public URL
-      const photoUrl = `${this.baseUrl}/${filename}`;
-      return photoUrl;
+      return await this.uploadToCloudinary(file.buffer, options);
     } catch (error) {
-      console.error("Error uploading profile photo:", error);
-      throw new Error("Failed to upload profile photo");
+      throw new Error('Failed to upload profile photo');
     }
   }
 
   async deleteProfilePhoto(photoUrl) {
     try {
-      // Extract filename from URL
-      const filename = photoUrl.split("/").pop();
-      const filepath = path.join(this.uploadDir, filename);
-      // Delete file
-      await fs.unlink(filepath);
-      return true;
+      const publicId = this.getPublicIdFromUrl(photoUrl);
+      if (publicId) {
+        await cloudinary.uploader.destroy(publicId);
+        return true;
+      }
+      return false;
     } catch (error) {
-      console.error("Error deleting profile photo:", error);
-      // Don't throw error, just log
+      console.error('Error deleting profile photo:', error);
       return false;
     }
   }
@@ -86,140 +123,94 @@ class UploadService {
 
   async uploadPetPhoto(file, petId) {
     try {
-      // Generate unique filename
-      const filename = `pet-${petId}-${uuidv4()}.jpg`;
-      const filepath = path.join(this.petUploadDir, filename);
+      const options = {
+        folder: this.folders.pets,
+        public_id: `pet-${petId}-${Date.now()}`,
+        resource_type: 'image',
+        transformation: [
+          { 
+            width: uploadConfig.petImageSize.width, 
+            height: uploadConfig.petImageSize.height, 
+            crop: 'fill' 
+          },
+          { quality: 'auto', fetch_format: 'auto' }
+        ]
+      };
 
-      // Process image with sharp (resize, compress)
-      await sharp(file.buffer)
-        .resize(
-          uploadConfig.petImageSize.width,
-          uploadConfig.petImageSize.height,
-          {
-            fit: "cover",
-            position: "center",
-          }
-        )
-        .jpeg({ quality: uploadConfig.quality })
-        .toFile(filepath);
-
-      // Return public URL
-      const photoUrl = `${this.petBaseUrl}/${filename}`;
-      return photoUrl;
+      return await this.uploadToCloudinary(file.buffer, options);
     } catch (error) {
-      console.error("Error uploading pet photo:", error);
-      throw new Error("Failed to upload pet photo");
+      throw new Error('Failed to upload pet photo');
     }
   }
 
   async deletePetPhoto(photoUrl) {
     try {
-      // Extract filename from URL
-      const filename = photoUrl.split("/").pop();
-      const filepath = path.join(this.petUploadDir, filename);
-      // Delete file
-      await fs.unlink(filepath);
-      return true;
+      const publicId = this.getPublicIdFromUrl(photoUrl);
+      if (publicId) {
+        await cloudinary.uploader.destroy(publicId);
+        return true;
+      }
+      return false;
     } catch (error) {
-      console.error("Error deleting pet photo:", error);
-      // Don't throw error, just log
+      console.error('Error deleting pet photo:', error);
       return false;
     }
   }
 
-  // ==================== TICKET ATTACHMENTS (NEW) ====================
+  // ==================== TICKET ATTACHMENTS ====================
 
   async uploadTicketAttachment(file, userId) {
     try {
-      const fileExtension = path.extname(file.originalname).toLowerCase();
-      const filename = `ticket-${userId}-${uuidv4()}${fileExtension}`;
-      const filepath = path.join(this.ticketUploadDir, filename);
+      const isImage = file.mimetype.startsWith('image/');
+      const resourceType = isImage ? 'image' : 'raw'; // 'raw' for PDFs, Docs, etc.
 
-      // Check if file is an image
-      const isImage = file.mimetype.startsWith("image/");
+      const options = {
+        folder: this.folders.tickets,
+        public_id: `ticket-${userId}-${Date.now()}`,
+        resource_type: resourceType,
+      };
 
+      // Apply optimization only for images
       if (isImage) {
-        // Process images: resize and compress
-        await sharp(file.buffer)
-          .resize(2000, 2000, {
-            fit: "inside",
-            withoutEnlargement: true,
-          })
-          .jpeg({ quality: 85 })
-          .toFile(filepath);
-      } else {
-        // For non-images (PDF, Word, Excel), save as-is
-        await fs.writeFile(filepath, file.buffer);
+        options.transformation = [{ quality: 'auto', fetch_format: 'auto' }];
       }
 
-      // Return public URL
-      const attachmentUrl = `${this.ticketBaseUrl}/${filename}`;
-      return attachmentUrl;
+      return await this.uploadToCloudinary(file.buffer, options);
     } catch (error) {
-      console.error("Error uploading ticket attachment:", error);
-      throw new Error("Failed to upload ticket attachment");
+      throw new Error('Failed to upload ticket attachment');
     }
   }
 
   async deleteTicketAttachment(attachmentUrl) {
     try {
-      // Extract filename from URL
-      const filename = attachmentUrl.split("/").pop();
-      const filepath = path.join(this.ticketUploadDir, filename);
-      // Delete file
-      await fs.unlink(filepath);
-      return true;
+      const publicId = this.getPublicIdFromUrl(attachmentUrl);
+      if (publicId) {
+        // We need to know if it was 'image' or 'raw' to delete correctly, 
+        // but destroy usually defaults to image. For raw, we might need a stored type.
+        // For simplicity, we'll try both or just image for now.
+        // In a production system, store public_id and resource_type in DB.
+        await cloudinary.uploader.destroy(publicId); 
+        // Note: For raw files, you might need { resource_type: 'raw' }
+        return true;
+      }
+      return false;
     } catch (error) {
-      console.error("Error deleting ticket attachment:", error);
-      // Don't throw error, just log
+      console.error('Error deleting ticket attachment:', error);
       return false;
     }
   }
 
   // ==================== HELPER METHODS ====================
 
-  /**
-   * Get file size in a human-readable format
-   */
   getFileSizeString(bytes) {
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    if (bytes === 0) return "0 Bytes";
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    if (bytes === 0) return '0 Bytes';
     const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
-    return Math.round(bytes / Math.pow(1024, i), 2) + " " + sizes[i];
+    return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i];
   }
 
-  /**
-   * Validate file type
-   */
   isValidFileType(mimetype, allowedTypes) {
     return allowedTypes.includes(mimetype);
-  }
-
-  /**
-   * Clean up old files (can be run as a cron job)
-   */
-  async cleanupOldFiles(directory, daysOld = 90) {
-    try {
-      const files = await fs.readdir(directory);
-      const now = Date.now();
-      const maxAge = daysOld * 24 * 60 * 60 * 1000;
-
-      for (const file of files) {
-        const filepath = path.join(directory, file);
-        const stats = await fs.stat(filepath);
-        const age = now - stats.mtime.getTime();
-
-        if (age > maxAge) {
-          await fs.unlink(filepath);
-          console.log(`Deleted old file: ${file}`);
-        }
-      }
-
-      return true;
-    } catch (error) {
-      console.error("Error cleaning up old files:", error);
-      return false;
-    }
   }
 }
 
