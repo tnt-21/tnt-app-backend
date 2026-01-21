@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit'); // ✅ import helper
 const { errorResponse } = require('../utils/response.util');
 
 const rateLimitMiddleware = (maxRequests = 100, windowMinutes = 15) => {
@@ -14,13 +15,9 @@ const rateLimitMiddleware = (maxRequests = 100, windowMinutes = 15) => {
     },
     standardHeaders: true,
     legacyHeaders: false,
-    validate: {
-      trustProxy: false,
-      ip: false
-    },
     keyGenerator: (req) => {
-      // Use user_id if authenticated, otherwise IP
-      return req.user?.user_id || req.ip;
+      // Use user_id if authenticated, otherwise IPv6-safe IP
+      return req.user?.user_id || ipKeyGenerator(req);
     },
     handler: (req, res) => {
       return errorResponse(
