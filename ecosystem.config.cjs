@@ -8,7 +8,7 @@ module.exports = {
       instances: 1, // Number of instances to run (or a specific number)
       autorestart: true, // Automatically restart the app if it crashes
       watch: false, // Watch for file changes and restart the app (good for development)
-      max_memory_restart: "1G", // Restart the app if it exceeds a memory limit
+      max_memory_restart: "500M", // Restart the app if it exceeds a memory limit
       merge_logs: true, // Merge logs from all instances
       time: true, // Add timestamps to logs
 
