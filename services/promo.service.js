@@ -16,7 +16,7 @@ class PromoService {
     let paramCount = 1;
 
     if (is_active !== undefined) {
-      whereConditions.push(`is_active = $${paramCount}`);
+      whereConditions.push(`pc.is_active = $${paramCount}`);
       values.push(is_active);
       paramCount++;
     }
@@ -33,7 +33,7 @@ class PromoService {
       FROM promo_codes pc
       LEFT JOIN admin_users au ON pc.created_by = au.admin_id
       ${whereClause}
-      ORDER BY created_at DESC
+      ORDER BY pc.created_at DESC
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
 
@@ -41,7 +41,7 @@ class PromoService {
 
     const result = await pool.query(query, values);
 
-    const countQuery = `SELECT COUNT(*) as total FROM promo_codes ${whereClause}`;
+    const countQuery = `SELECT COUNT(*) as total FROM promo_codes pc ${whereClause}`;
     const countResult = await pool.query(countQuery, values.slice(0, -2));
     const total = parseInt(countResult.rows[0].total);
 
@@ -167,12 +167,24 @@ class PromoService {
     };
   }
 
-  async createPromoCode(promoData, adminId) {
+  async createPromoCode(promoData, userId) {
     const {
       promo_code, promo_name, description, discount_type, discount_value,
       max_discount_amount, min_purchase_amount, applicable_to, tier_ids,
       service_ids, max_uses_total, max_uses_per_user, valid_from, valid_until
     } = promoData;
+
+    // Resolve admin_id from user_id
+    const adminResult = await pool.query(
+      'SELECT admin_id FROM admin_users WHERE user_id = $1',
+      [userId]
+    );
+
+    if (adminResult.rows.length === 0) {
+      throw new AppError('Admin profile not found for this user', 403, 'ADMIN_PROFILE_REQUIRED');
+    }
+
+    const adminId = adminResult.rows[0].admin_id;
 
     // Check if code already exists
     const existingCheck = await pool.query(

@@ -363,38 +363,226 @@ class SupportService {
     ];
   }
 
-  // ==================== HELPER METHODS ====================
+  // ==================== ADMINISTRATIVE METHODS ====================
 
-  async generateTicketNumber() {
-    const prefix = "TKT";
-    const date = new Date();
-    const year = date.getFullYear().toString().substr(-2);
-    const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  async getAllTicketsGlobal(filters) {
+    const conditions = ["1=1"];
+    const params = [];
+    let paramCount = 1;
 
-    // Get count of tickets today
-    const countResult = await pool.query(
-      `SELECT COUNT(*) as count
-       FROM support_tickets
-       WHERE DATE(created_at) = CURRENT_DATE`
-    );
+    if (filters.status) {
+      conditions.push(`st.status = $${paramCount}`);
+      params.push(filters.status);
+      paramCount++;
+    }
 
-    const count = parseInt(countResult.rows[0].count) + 1;
-    const sequence = count.toString().padStart(4, "0");
+    if (filters.category) {
+      conditions.push(`st.category = $${paramCount}`);
+      params.push(filters.category);
+      paramCount++;
+    }
 
-    return `${prefix}${year}${month}${sequence}`;
+    if (filters.priority) {
+      conditions.push(`st.priority = $${paramCount}`);
+      params.push(filters.priority);
+      paramCount++;
+    }
+
+    if (filters.assigned_to) {
+      conditions.push(`st.assigned_to = $${paramCount}`);
+      params.push(filters.assigned_to);
+      paramCount++;
+    }
+
+    if (filters.search) {
+      conditions.push(
+        `(st.ticket_number ILIKE $${paramCount} OR st.subject ILIKE $${paramCount} OR u.full_name ILIKE $${paramCount})`
+      );
+      params.push(`%${filters.search}%`);
+      paramCount++;
+    }
+
+    const { page = 1, limit = 20 } = filters;
+    const offset = (page - 1) * limit;
+
+    const query = `
+      SELECT
+        st.*,
+        u.full_name as user_name,
+        u.email as user_email,
+        au.full_name as assigned_to_name
+      FROM support_tickets st
+      JOIN users u ON st.user_id = u.user_id
+      LEFT JOIN admin_users au ON st.assigned_to = au.admin_id
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY st.created_at DESC
+      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+    `;
+
+    params.push(limit, offset);
+
+    const result = await pool.query(query, params);
+
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM support_tickets st
+      JOIN users u ON st.user_id = u.user_id
+      WHERE ${conditions.join(" AND ")}
+    `;
+    const countResult = await pool.query(countQuery, params.slice(0, paramCount - 1));
+
+    return {
+      tickets: result.rows,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: parseInt(countResult.rows[0].total),
+        pages: Math.ceil(parseInt(countResult.rows[0].total) / limit),
+      },
+    };
   }
 
-  calculateSLADueDate(priority) {
-    const now = new Date();
-    const hoursToAdd = {
-      urgent: 4,
-      high: 24,
-      medium: 48,
-      low: 72,
-    };
+  async getTicketDetailsAdmin(ticketId) {
+    const query = `
+      SELECT
+        st.*,
+        u.full_name as user_name,
+        u.phone as user_phone,
+        u.email as user_email,
+        au.full_name as assigned_to_name,
+        b.booking_number,
+        s.subscription_id as sub_number,
+        p.name as pet_name
+      FROM support_tickets st
+      JOIN users u ON st.user_id = u.user_id
+      LEFT JOIN admin_users au ON st.assigned_to = au.admin_id
+      LEFT JOIN bookings b ON st.booking_id = b.booking_id
+      LEFT JOIN subscriptions s ON st.subscription_id = s.subscription_id
+      LEFT JOIN pets p ON st.pet_id = p.pet_id
+      WHERE st.ticket_id = $1
+    `;
 
-    now.setHours(now.getHours() + (hoursToAdd[priority] || 48));
-    return now;
+    const result = await pool.query(query, [ticketId]);
+
+    if (result.rows.length === 0) {
+      throw new AppError("Ticket not found", 404, "TICKET_NOT_FOUND");
+    }
+
+    return result.rows[0];
+  }
+
+  async updateTicketStatus(ticketId, status, resolutionNotes, adminId) {
+    const updates = ["status = $1", "updated_at = NOW()"];
+    const params = [status, ticketId];
+
+    if (resolutionNotes) {
+      updates.push("resolution_notes = $3");
+      params.push(resolutionNotes);
+    }
+
+    if (status === "resolved") {
+      updates.push("resolved_at = NOW()");
+    } else if (status === "closed") {
+      updates.push("closed_at = NOW()");
+    }
+
+    const query = `
+      UPDATE support_tickets
+      SET ${updates.join(", ")}
+      WHERE ticket_id = $2
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, params);
+
+    if (result.rows.length === 0) {
+      throw new AppError("Ticket not found", 404, "TICKET_NOT_FOUND");
+    }
+
+    return result.rows[0];
+  }
+
+  async assignTicket(ticketId, adminId) {
+    const query = `
+      UPDATE support_tickets
+      SET assigned_to = $1,
+          assigned_at = NOW(),
+          updated_at = NOW()
+      WHERE ticket_id = $2
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, [adminId, ticketId]);
+
+    if (result.rows.length === 0) {
+      throw new AppError("Ticket not found", 404, "TICKET_NOT_FOUND");
+    }
+
+    return result.rows[0];
+  }
+
+  async addAdminMessage(ticketId, adminId, userId, message, attachments, isInternal) {
+    const query = `
+      INSERT INTO ticket_messages (
+        ticket_id, sender_id, sender_type, message, attachments, is_internal
+      ) VALUES ($1, $2, 'admin', $3, $4, $5)
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, [
+      ticketId,
+      userId, // We use the user_id associated with the admin
+      message,
+      attachments ? JSON.stringify(attachments) : null,
+      isInternal || false,
+    ]);
+
+    // Update ticket's first_response_at if not set and message is not internal
+    if (!isInternal) {
+      await pool.query(
+        `UPDATE support_tickets
+         SET first_response_at = COALESCE(first_response_at, NOW()),
+             status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END,
+             updated_at = NOW()
+         WHERE ticket_id = $1`,
+        [ticketId]
+      );
+    }
+
+    return result.rows[0];
+  }
+
+  async getSupportMetrics() {
+    const query = `
+      SELECT
+        COUNT(*) as total_tickets,
+        COUNT(*) FILTER (WHERE status = 'open') as open_tickets,
+        COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress_tickets,
+        COUNT(*) FILTER (WHERE status = 'resolved') as resolved_tickets,
+        COUNT(*) FILTER (WHERE priority = 'high' OR priority = 'urgent') as high_priority_tickets,
+        AVG(EXTRACT(EPOCH FROM (first_response_at - created_at))/3600)::NUMERIC(10,2) as avg_response_time_hours,
+        AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))/3600)::NUMERIC(10,2) as avg_resolution_time_hours
+      FROM support_tickets;
+    `;
+
+    const result = await pool.query(query);
+    return result.rows[0];
+  }
+
+  async getAdminMessages(ticketId) {
+    const query = `
+      SELECT
+        tm.*,
+        u.full_name as sender_name,
+        u.profile_photo_url as sender_photo
+      FROM ticket_messages tm
+      JOIN users u ON tm.sender_id = u.user_id
+      WHERE tm.ticket_id = $1
+      ORDER BY tm.created_at ASC
+    `;
+
+    const result = await pool.query(query, [ticketId]);
+    return result.rows;
   }
 }
 

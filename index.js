@@ -29,6 +29,8 @@ const communityRoutes = require('./routes/v1/community.routes');
 const supportRoutes = require('./routes/v1/support.routes');
 const configRoutes = require('./routes/v1/config.routes');
 const analyticsRoutes = require('./routes/v1/analytics.routes');
+const uploadRoutes = require('./routes/v1/upload.routes'); // Import upload routes
+const auditRoutes = require('./routes/v1/audit.routes'); // Import audit routes
 
 // Import cron jobs
 const { initPetLifeStageJob } = require('./cron/pet.cron');
@@ -138,6 +140,8 @@ app.use(`/api/${API_VERSION}/community`, communityRoutes);
 app.use(`/api/${API_VERSION}/support`, supportRoutes);
 app.use(`/api/${API_VERSION}/config`, configRoutes);
 app.use(`/api/${API_VERSION}/analytics`, analyticsRoutes);
+app.use(`/api/${API_VERSION}/upload`, uploadRoutes); // Mount upload routes
+app.use(`/api/${API_VERSION}/audit`, auditRoutes); // Mount audit routes
 
 // 404 Handler
 app.use((req, res) => {
@@ -163,7 +167,8 @@ async function startServer() {
     initPetLifeStageJob();
     initKeepAliveJob();
     
-    server = app.listen(PORT, () => {
+    // server = app.listen(PORT, () => {
+    server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`
 ╔═══════════════════════════════════════╗
 ║  🐾 TAILS & TALES API SERVER         ║

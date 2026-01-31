@@ -337,6 +337,81 @@ class ServiceController {
       next(error);
     }
   }
+
+  // ==================== ADMIN: SERVICE MANAGEMENT ====================
+
+  async createService(req, res, next) {
+    try {
+      const service = await serviceService.createService(req.body);
+      return ResponseUtil.success(res, service, 'Service created successfully', 201);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateService(req, res, next) {
+    try {
+      const { service_id } = req.params;
+      const service = await serviceService.updateService(service_id, req.body);
+      return ResponseUtil.success(res, service, 'Service updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteService(req, res, next) {
+    try {
+      const { service_id } = req.params;
+      await serviceService.deleteService(service_id);
+      return ResponseUtil.success(res, null, 'Service deleted successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==================== ADMIN: ELIGIBILITY CONFIG ====================
+
+  async getServiceEligibilityRules(req, res, next) {
+    try {
+      const { service_id } = req.params;
+      const rules = await serviceService.getServiceEligibilityRules(service_id);
+      return ResponseUtil.success(res, rules, 'Eligibility rules retrieved successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateServiceEligibilityRules(req, res, next) {
+    try {
+      const { service_id } = req.params;
+      const rules = await serviceService.updateServiceEligibilityRules(service_id, req.body.rules);
+      return ResponseUtil.success(res, rules, 'Eligibility rules updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ==================== ADMIN: AVAILABILITY CONFIG ====================
+
+  async getServiceAvailability(req, res, next) {
+    try {
+      const { service_id } = req.params;
+      const availability = await serviceService.getServiceAvailability(service_id);
+      return ResponseUtil.success(res, availability, 'Service availability retrieved successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateServiceAvailability(req, res, next) {
+    try {
+      const { service_id } = req.params;
+      const availability = await serviceService.updateServiceAvailability(service_id, req.body.availability);
+      return ResponseUtil.success(res, availability, 'Service availability updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new ServiceController();

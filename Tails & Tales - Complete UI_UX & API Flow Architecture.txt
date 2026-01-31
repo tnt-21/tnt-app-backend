@@ -1,0 +1,3065 @@
+﻿Tails & Tales - Complete UI/UX & API Flow Architecture
+Screen-by-Screen Architecture
+________________
+
+
+1. SPLASH SCREEN
+UI Components
+* App Logo (centered, animated fade-in)
+* Loading Spinner (below logo)
+* Version Text (bottom: "v1.0.0")
+Screen Logic
+On Load:
+1. Check if access_token exists in secure storage
+2. If token exists:
+   * Call API: GET /auth/me
+   * If response success: true → Navigate to Home Screen
+   * If response success: false (401 error) → Call POST /auth/refresh-token
+      * If refresh success → Navigate to Home Screen
+      * If refresh fails → Navigate to Login Screen
+3. If no token → Wait 2 seconds → Navigate to Login Screen
+Duration: 2-3 seconds max
+________________
+
+
+2. LOGIN SCREEN
+UI Components
+* App Logo (top center)
+* Tagline ("Lifelong care for your furry friends")
+* Phone Input Field
+   * Label: "Enter Mobile Number"
+   * Country code prefix: "+91" (fixed)
+   * Placeholder: "9876543210"
+   * Keyboard: Numeric
+   * Max length: 10 digits
+* Send OTP Button (full width, primary color)
+   * Initially disabled
+   * Enables when 10 digits entered
+* Terms Checkbox ("I agree to Terms & Conditions")
+* Privacy Policy Link (clickable text)
+Field Validation (Client-side)
+* Phone must be exactly 10 digits
+* First digit must be 6-9
+* Show error message below field if invalid
+API Call Flow
+When user taps "Send OTP":
+API: POST /auth/send-otp
+Request Body:
+{
+  "phone": "+919876543210"
+}
+
+
+Possible Responses:
+Success (200):
+{
+  "success": true,
+  "message": "OTP sent successfully",
+  "data": {
+    "otp_id": "otp:+919876543210:1704892800000",
+    "expires_in": 300
+  }
+}
+
+
+Action:
+* Store otp_id locally
+* Navigate to OTP Verification Screen
+* Pass phone number as argument
+Error - Rate Limited (429):
+{
+  "success": false,
+  "message": "Too many attempts. Try after 10 minutes",
+  "error_code": "RATE_LIMIT_EXCEEDED"
+}
+
+
+Action:
+* Show red SnackBar with message
+* Disable button for 10 minutes
+* Show countdown timer
+Error - Invalid Phone (400):
+{
+  "success": false,
+  "message": "Invalid phone number format",
+  "error_code": "INVALID_PHONE"
+}
+
+
+Action:
+* Show error text below phone field
+* Keep button disabled
+________________
+
+
+3. OTP VERIFICATION SCREEN
+UI Components
+* Back Button (top left) → Returns to Login Screen
+* Header Text: "Verify OTP"
+* Instruction Text: "Enter 6-digit code sent to +91-9876543210"
+* Edit Phone Link (clickable, goes back)
+* OTP Input Boxes (6 boxes, auto-focus next)
+   * Auto-focus on first box
+   * Auto-submit when 6th digit entered
+   * Support paste functionality
+* Timer Display: "Resend in 4:59"
+* Resend OTP Button
+   * Disabled while timer running
+   * Enabled after timer expires
+* Verify Button (full width, primary)
+   * Enabled when 6 digits entered
+Auto-Behaviors
+* Auto-read SMS (Android SMS Retriever API)
+* Auto-submit when 6 digits filled
+API Call Flow
+When 6 digits entered (auto-submit) OR user taps "Verify":
+API: POST /auth/verify-otp
+Request Body:
+{
+  "phone": "+919876543210",
+  "otp": "123456",
+  "device_type": "mobile",
+  "fcm_token": "fcm_abc123xyz..."
+}
+
+
+Possible Responses:
+Success - New User (200):
+{
+  "success": true,
+  "message": "Login successful",
+  "data": {
+    "user": {
+      "user_id": "550e8400-e29b-41d4-a716-446655440000",
+      "phone": "+919876543210",
+      "full_name": null,
+      "email": null,
+      "role": "user"
+    },
+    "access_token": "eyJhbG...",
+    "refresh_token": "eyJhbG...",
+    "is_new_user": true
+  }
+}
+
+
+Action:
+* Store access_token and refresh_token securely
+* Store user object in local storage
+* Navigate to Profile Setup Screen
+Success - Existing User with Profile (200):
+{
+  "success": true,
+  "data": {
+    "user": {
+      "user_id": "...",
+      "full_name": "John Doe",
+      "email": "john@example.com"
+    },
+    "access_token": "...",
+    "refresh_token": "...",
+    "is_new_user": false
+  }
+}
+
+
+Action:
+* Store tokens
+* Call GET /pets to check if user has pets
+   * If pets exist → Navigate to Home Screen
+   * If no pets → Navigate to Add Pet Screen
+Error - Invalid OTP (400):
+{
+  "success": false,
+  "message": "Invalid OTP entered",
+  "error_code": "INVALID_OTP"
+}
+
+
+Action:
+* Clear OTP input boxes
+* Show error message below boxes
+* Keep focus on first box
+* Increment attempt counter (show after 2 failed attempts: "X attempts remaining")
+Error - OTP Expired (400):
+{
+  "success": false,
+  "message": "OTP has expired. Please request a new one",
+  "error_code": "OTP_EXPIRED"
+}
+
+
+Action:
+* Clear OTP boxes
+* Show error message
+* Auto-enable "Resend OTP" button
+________________
+
+
+When user taps "Resend OTP":
+API: POST /auth/send-otp (same as login)
+Action on Success:
+* Reset timer to 5:00
+* Clear OTP boxes
+* Show success SnackBar: "OTP sent successfully"
+* Disable resend button again
+________________
+
+
+4. PROFILE SETUP SCREEN
+UI Components
+* Progress Indicator (top: "Step 1 of 2" or "50% Complete" bar)
+* Header: "Complete Your Profile"
+* Profile Photo Upload
+   * Circular placeholder with camera icon
+   * Tap to open camera/gallery selector
+   * Shows selected image preview
+   * "Remove" option if image selected
+* Full Name Field (required)
+   * Label: "Full Name"
+   * Placeholder: "Enter your name"
+   * Keyboard: Text with capitalization
+   * Character counter: "0/255"
+* Email Field (optional)
+   * Label: "Email (Optional)"
+   * Placeholder: "your@email.com"
+   * Keyboard: Email type
+   * Shows "✓" icon when valid email format
+* Date of Birth Picker (optional)
+   * Label: "Date of Birth"
+   * Shows calendar picker on tap
+   * Displays selected date
+* Gender Selection (optional)
+   * Radio buttons: Male | Female | Other
+* Continue Button (bottom, full width)
+   * Enabled only when full_name has 2+ characters
+* Skip for Now (text link, bottom)
+Validation Rules
+* Full Name: Min 2 chars, Max 255 chars, required
+* Email: Valid format if provided
+* All other fields optional
+API Flow
+When user selects photo (camera/gallery):
+API: POST /users/me/upload-photo
+Request: Multipart form-data with image file
+Response Success:
+{
+  "success": true,
+  "data": {
+    "url": "https://s3.amazonaws.com/tails-tales/users/uuid/profile_1704892800000.jpg"
+  }
+}
+
+
+Action:
+* Store URL temporarily in local state
+* Display uploaded image in circular avatar
+* Enable "Remove" option
+Response Error (File too large):
+{
+  "success": false,
+  "message": "File size must be less than 5MB",
+  "error_code": "FILE_TOO_LARGE"
+}
+
+
+Action:
+* Show error dialog
+* Keep previous state (placeholder or old image)
+________________
+
+
+When user taps "Continue":
+API: PUT /users/me
+Request Body:
+{
+  "full_name": "John Doe",
+  "email": "john@example.com",
+  "date_of_birth": "1990-01-01",
+  "gender_id": 1,
+  "profile_photo_url": "https://s3.amazonaws.com/..."
+}
+
+
+Response Success:
+{
+  "success": true,
+  "message": "Profile updated successfully",
+  "data": {
+    "user": {
+      "user_id": "...",
+      "full_name": "John Doe",
+      "email": "john@example.com",
+      "profile_photo_url": "..."
+    }
+  }
+}
+
+
+Action:
+* Update local user object
+* Navigate to Add Pet Screen
+Response Error (Email exists):
+{
+  "success": false,
+  "message": "Email already registered with another account",
+  "error_code": "EMAIL_EXISTS"
+}
+
+
+Action:
+* Show error message below email field
+* Highlight email field in red
+* Keep user on same screen
+________________
+
+
+When user taps "Skip for Now":
+* No API call
+* Navigate directly to Add Pet Screen
+________________
+
+
+5. ADD PET SCREEN
+UI Components
+* Header: "Add Your Pet"
+* Pet Photo Upload
+   * Large circular/square placeholder with paw icon
+   * Tap to select from camera/gallery
+* Pet Name Field (required)
+   * Label: "Pet Name"
+   * Placeholder: "e.g., Buddy"
+   * Max 100 characters
+* Species Selector (required)
+   * Two large cards: 🐕 Dog | 🐱 Cat
+   * Single selection, highlights selected
+* Breed Field (required)
+   * Autocomplete search dropdown
+   * Label: "Breed"
+   * Shows suggestions as user types
+   * "Not Sure" option available
+* Date of Birth (required)
+   * Calendar picker
+   * Shows calculated age: "2 years 3 months old"
+   * Auto-calculates life stage (shown as badge)
+* Gender Selection
+   * Radio: Male | Female | Unknown
+* Weight Slider (optional)
+   * Range: 0-100 kg
+   * Shows current value: "25.5 kg"
+* Color Field (optional)
+   * Text input
+   * Suggestions: Golden, Black, White, Brown, etc.
+* Microchip ID (optional, expandable section)
+   * Label: "Microchip Number"
+   * Numeric keyboard
+* Add Pet Button (bottom, primary)
+   * Enabled when name, species, breed, DOB filled
+* Skip link (only if coming from onboarding, adds later from profile)
+Dynamic Breed Autocomplete
+Triggered: When user types in breed field (debounced 500ms)
+API: GET /config/breeds?species_id=1&search=gold
+Response:
+{
+  "success": true,
+  "data": {
+    "breeds": [
+      { "breed_id": 1, "breed_name": "Golden Retriever" },
+      { "breed_id": 2, "breed_name": "Golden Doodle" }
+    ]
+  }
+}
+
+
+Action:
+* Show dropdown with suggestions
+* User selects from list
+* Selected breed fills the field
+Auto Life Stage Calculation
+When DOB selected:
+* Calculate age in months
+* If Dog:
+   * 0-12 months → Badge: "🐶 Puppy"
+   * 1-3 years → Badge: "🐕 Developing"
+   * 3-8 years → Badge: "🦴 Adult"
+   * 8+ years → Badge: "👴 Senior"
+* If Cat:
+   * 0-12 months → Badge: "🐱 Kitten"
+   * 1-7 years → Badge: "😺 Young Adult"
+   * 8+ years → Badge: "👴 Senior"
+API Flow
+When user taps "Add Pet":
+API: POST /pets
+Request Body:
+{
+  "name": "Buddy",
+  "species_id": 1,
+  "breed": "Golden Retriever",
+  "date_of_birth": "2020-01-01",
+  "gender_id": 1,
+  "weight": 25.5,
+  "color": "Golden",
+  "microchip_id": "1234567890",
+  "photo_url": "https://s3.amazonaws.com/..."
+}
+
+
+Response Success:
+{
+  "success": true,
+  "message": "Buddy added successfully! 🎉",
+  "data": {
+    "pet": {
+      "pet_id": "...",
+      "name": "Buddy",
+      "species_id": 1,
+      "life_stage_id": 3,
+      "life_stage_name": "Adult",
+      "age_months": 48
+    }
+  }
+}
+
+
+Action:
+* Show success animation (confetti or checkmark)
+* Store pet in local cache
+* Navigate to Home Screen
+* Show welcome tooltip: "Tap here to switch between pets"
+Response Error (Validation):
+{
+  "success": false,
+  "message": "Validation failed",
+  "errors": [
+    {
+      "field": "date_of_birth",
+      "message": "Date cannot be in the future"
+    }
+  ]
+}
+
+
+Action:
+* Scroll to error field
+* Highlight field in red
+* Show error message below field
+________________
+
+
+6. HOME SCREEN (Main Dashboard)
+UI Structure
+Top App Bar
+* Location Chip (left)
+   * Icon: 📍
+   * Text: "Home" or custom address label
+   * Tap → Opens Address Selector Bottom Sheet
+* App Logo (center, small)
+* Notification Bell (right)
+   * Red badge with count if unread > 0
+   * Tap → Navigate to Notifications Screen
+Pet Carousel Section
+* Horizontal scrollable cards
+* Each Pet Card shows:
+   * Pet photo (circular)
+   * Pet name
+   * Age & breed
+   * Life stage badge
+   * Quick stats (next vet visit, active subscription)
+* "+ Add Pet" card at the end
+* Active pet indicator (highlighted border)
+* Swipe to switch active pet
+Quick Actions Grid (2x2)
+* Book Service 🗓️
+   * Tap → Services Catalog Screen
+* My Subscriptions ⭐
+   * Shows active tier badge or "Subscribe"
+   * Tap → Subscriptions Screen
+* Health Records 📋
+   * Tap → Pet Health Screen
+* Emergency SOS 🚨
+   * Red colored
+   * Tap → Emergency Screen
+Upcoming Bookings Section
+* Header: "Upcoming Bookings" with "View All" link
+* Shows next 3 bookings as cards:
+   * Service icon & name
+   * Date & time
+   * Pet name
+   * Status badge (Confirmed/In Progress)
+   * "Track" button if in progress
+* If no bookings: Empty state illustration + "Book your first service"
+Health Reminders Card (if any)
+* Vaccination Due:
+   * "💉 Rabies vaccination due in 3 days"
+   * Tap → Navigate to Vaccination Details
+* Medication Reminder:
+   * "💊 Give Apoquel at 9:00 AM"
+   * "Mark as Given" button
+Community Events Banner (if upcoming)
+* Event image
+* Event name & date
+* "Register Now" button
+* Swipeable if multiple events
+Bottom Navigation
+* Home (filled icon, active)
+* Services
+* Subscriptions
+* Community
+* Profile
+API Calls on Screen Load
+1. Get Pets API: GET /pets Response:
+{
+  "success": true,
+  "data": {
+    "pets": [
+      {
+        "pet_id": "...",
+        "name": "Buddy",
+        "photo_url": "...",
+        "species": "Dog",
+        "breed": "Golden Retriever",
+        "age_display": "4 years 2 months",
+        "life_stage": "Adult"
+      }
+    ]
+  }
+}
+
+
+Action: Populate pet carousel
+________________
+
+
+2. Get Upcoming Bookings API: GET /services/bookings?status=upcoming&limit=3 Response:
+{
+  "success": true,
+  "data": {
+    "bookings": [
+      {
+        "booking_id": "...",
+        "service_name": "Full Grooming",
+        "booking_date": "2024-01-15",
+        "booking_time": "10:00:00",
+        "status": "confirmed",
+        "pet_name": "Buddy",
+        "caregiver_name": "Sarah Smith",
+        "can_track": false
+      }
+    ]
+  }
+}
+
+
+Action: Populate upcoming bookings section
+________________
+
+
+3. Get Health Reminders API: GET /pets/:pet_id/health-reminders?upcoming=true Response:
+{
+  "success": true,
+  "data": {
+    "reminders": [
+      {
+        "reminder_id": "...",
+        "type": "vaccination",
+        "title": "Rabies Vaccination Due",
+        "due_date": "2024-01-13",
+        "days_remaining": 3,
+        "priority": "high"
+      }
+    ]
+  }
+}
+
+
+Action: Show in health reminders card
+________________
+
+
+4. Get Active Subscription API: GET /subscriptions/me/active?pet_id={selected_pet_id} Response with active subscription:
+{
+  "success": true,
+  "data": {
+    "subscription": {
+      "subscription_id": "...",
+      "tier_name": "Plus",
+      "status": "active",
+      "next_billing_date": "2024-02-01",
+      "entitlements": {
+        "grooming": { "total": 1, "used": 0, "remaining": 1 },
+        "vet_visits": { "total": 4, "used": 1, "remaining": 3 }
+      }
+    }
+  }
+}
+
+
+Action:
+* Show tier badge in pet card
+* Update "My Subscriptions" quick action with tier name
+Response without subscription:
+{
+  "success": true,
+  "data": {
+    "subscription": null
+  }
+}
+
+
+Action: Show "Subscribe" in quick action
+________________
+
+
+5. Get Unread Notifications API: GET /notifications?is_read=false&limit=5 Response:
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "notification_id": "...",
+        "title": "Booking Confirmed",
+        "message": "Your grooming appointment is confirmed for Jan 15",
+        "type": "booking",
+        "created_at": "2024-01-10T10:00:00Z"
+      }
+    ],
+    "unread_count": 5
+  }
+}
+
+
+Action:
+* Show count badge on bell icon
+* Store locally for notifications screen
+________________
+
+
+6. Get Featured Community Event API: GET /community/events?upcoming=true&featured=true&limit=1 Response:
+{
+  "success": true,
+  "data": {
+    "events": [
+      {
+        "event_id": "...",
+        "event_name": "Dog Park Meetup",
+        "event_date": "2024-01-20",
+        "image_url": "...",
+        "registered_count": 25,
+        "max_capacity": 50
+      }
+    ]
+  }
+}
+
+
+Action: Show event banner if event exists
+________________
+
+
+Screen Refresh Behaviors
+Pull-to-refresh: Re-fetch all 6 APIs
+Auto-refresh triggers:
+* App comes to foreground
+* Pet switched in carousel
+* Return from booking/subscription screens
+Real-time updates (WebSocket):
+* Listen for booking_status_update event
+* Listen for new_notification event
+* Update UI without full refresh
+________________
+
+
+7. SERVICES CATALOG SCREEN
+UI Components
+Top Section
+* Back Button (if navigated from home) or Close (if bottom nav)
+* Search Bar
+   * Icon: 🔍
+   * Placeholder: "Search services..."
+   * Real-time search (debounced 300ms)
+* Filter Button (top right)
+   * Icon shows active filter count badge
+   * Tap → Opens Filter Bottom Sheet
+Category Tabs (Horizontal scrollable)
+* All Services (default selected)
+* Grooming 🛁
+* Veterinary 🏥
+* Training 🎓
+* Boarding 🏠
+* Walking 🦴
+* Daycare 🎾
+Behavior: Tap category → Filters services → Calls API with category_id
+Pet Selector (if multiple pets)
+* Dropdown at top: "Services for: Buddy ▼"
+* Shows pet name + photo thumbnail
+* Tap → Select different pet → Reloads eligible services
+Services Grid (2 columns)
+Each Service Card:
+* Service image (full width)
+* Service category badge (top-left overlay)
+* Service name
+* Duration (e.g., "45-60 mins")
+* Rating (★ 4.8 | 234 reviews)
+* Price display:
+   * If NO subscription: "₹500"
+   * If included in subscription: "FREE" (green badge) + struck-through original price
+   * If discounted: "₹400" (with "20% off" badge) + struck ₹500
+* "Book Now" button
+Empty States
+* No services for selected pet:
+   * Illustration
+   * "No services available for [Pet Name]"
+   * "Try selecting a different pet"
+* No results for search:
+   * "No services found for 'xyz'"
+   * "Try different keywords"
+API Flow
+On Screen Load (or Category Change):
+API: GET /services/catalog?category_id=1&pet_id={active_pet_id}
+Response:
+{
+  "success": true,
+  "data": {
+    "services": [
+      {
+        "service_id": "...",
+        "service_name": "Full Body Grooming",
+        "category_name": "Grooming",
+        "base_price": 500,
+        "duration_minutes": 60,
+        "rating": 4.8,
+        "review_count": 234,
+        "image_url": "...",
+        "is_eligible": true,
+        "subscription_benefit": {
+          "is_included": true,
+          "tier_name": "Plus",
+          "price_override": 0
+        }
+      },
+      {
+        "service_id": "...",
+        "service_name": "Nail Trimming",
+        "is_eligible": false,
+        "reason": "Not available for Puppies under 6 months"
+      }
+    ]
+  }
+}
+
+
+Action:
+* Render service cards
+* Gray out ineligible services with reason
+* Show subscription badges where applicable
+________________
+
+
+When user types in search:
+API: GET /services/catalog?search=grooming&pet_id={pet_id} (Debounced, minimum 2 characters)
+Action:
+* Show loading shimmer on cards
+* Replace grid with search results
+* Show result count: "12 services found"
+________________
+
+
+When Filter button tapped:
+Opens Filter Bottom Sheet with:
+* Price Range Slider (₹0 - ₹5000)
+* Rating Filter (4★ & above, 3★ & above, etc.)
+* Duration (< 30 min, 30-60 min, 60+ min)
+* Availability (Today, Tomorrow, This Week)
+* Location Type (Home Service, Care Van)
+* Clear All button
+* Apply Filters button
+When Apply tapped:
+API: GET /services/catalog?category_id=1&min_price=0&max_price=1000&min_rating=4&duration_max=60
+Action:
+* Close bottom sheet
+* Update badge count on filter button
+* Reload services grid
+________________
+
+
+When service card tapped:
+Navigate to Service Detail Screen with service_id
+________________
+
+
+8. SERVICE DETAIL SCREEN
+UI Components
+Header Section
+* Back Button
+* Share Button (top right)
+* Favorite Icon (bookmark for later)
+Image Carousel
+* Full-width swipeable images
+* Dots indicator
+* Service images (before/after if grooming)
+Service Info Card
+* Service Name (large, bold)
+* Category Badge
+* Rating & Reviews
+   * ★★★★★ 4.8 (234 reviews)
+   * Tap → Reviews Bottom Sheet
+* Duration: "60-90 minutes"
+* Available for: Shows pet species/life stage eligibility
+Pricing Section
+* If Subscription Included:
+   * Large "FREE with Plus" badge (green)
+   * "Included in your subscription" text
+   * Remaining quota: "2 of 3 remaining this month"
+* If Discounted:
+   * ₹400 (large)
+   * ~~₹500~~ (small, struck)
+   * "20% off for Plus members"
+* If Regular:
+   * ₹500 (large)
+   * "Or subscribe to Plus for unlimited access"
+Description Section
+* "What's Included" (expandable)
+   * Bullet points
+   * e.g., "Full body wash, Nail trimming, Ear cleaning"
+* "How It Works" (expandable)
+   * Step-by-step process
+* "Important Notes" (expandable)
+   * Requirements, restrictions
+Pet Selection
+* Dropdown: "Select Pet"
+* Shows all user's eligible pets
+* Disabled pets shown grayed with reason
+Action Buttons (Bottom sticky)
+* Check Availability (primary, full width)
+   * If pet not selected → Shows validation
+   * If selected → Navigate to Booking Screen
+* Add to Cart (if implementing cart feature)
+API Calls
+On Screen Load:
+API: GET /services/catalog/:service_id?pet_id={active_pet_id}
+Response:
+{
+  "success": true,
+  "data": {
+    "service": {
+      "service_id": "...",
+      "service_name": "Full Body Grooming",
+      "description": "Complete grooming package...",
+      "category_name": "Grooming",
+      "base_price": 500,
+      "duration_minutes": 60,
+      "image_urls": ["url1", "url2", "url3"],
+      "rating": 4.8,
+      "review_count": 234,
+      "whats_included": [
+        "Full body wash with premium shampoo",
+        "Nail trimming and filing",
+        "Ear cleaning"
+      ],
+      "how_it_works": [
+        "Caregiver arrives at your location",
+        "Pre-grooming health check",
+        "Complete grooming session"
+      ],
+      "important_notes": [
+        "Pet should be calm and comfortable",
+        "Vaccinations should be up to date"
+      ],
+      "eligibility": {
+        "is_eligible": true,
+        "eligible_species": ["Dog", "Cat"],
+        "eligible_life_stages": ["Puppy", "Adult", "Senior"]
+      },
+      "subscription_info": {
+        "is_included_in_tier": "Plus",
+        "quota_remaining": 2,
+        "quota_total": 3,
+        "discount_percentage": 0
+      }
+    }
+  }
+}
+
+
+Action: Populate all sections
+________________
+
+
+When Share button tapped:
+* Generate deep link: tailsandtales://service/{service_id}
+* Open native share sheet
+* Options: WhatsApp, SMS, Copy Link
+________________
+
+
+When Reviews tapped:
+Opens Bottom Sheet
+API: GET /services/:service_id/reviews?page=1&limit=10
+Response:
+{
+  "success": true,
+  "data": {
+    "reviews": [
+      {
+        "review_id": "...",
+        "user_name": "John D.",
+        "rating": 5,
+        "comment": "Excellent service! Buddy loved it.",
+        "pet_name": "Buddy",
+        "created_at": "2024-01-05",
+        "photos": ["url1", "url2"]
+      }
+    ],
+    "average_rating": 4.8,
+    "rating_distribution": {
+      "5": 180,
+      "4": 40,
+      "3": 10,
+      "2": 3,
+      "1": 1
+    }
+  }
+}
+
+
+Action: Show reviews list with photos
+________________
+
+
+When "Check Availability" tapped:
+Validation:
+* If no pet selected → Show error: "Please select a pet"
+* If pet ineligible → Show: "This service is not available for [Pet Name]"
+* If valid → Navigate to Booking Screen with:
+   * service_id
+   * pet_id
+   * subscription_applicable (true/false)
+________________
+
+
+9. BOOKING SCREEN (Slot Selection & Confirmation)
+UI Components
+Summary Cards Section
+* Service Card (non-editable)
+   * Service image (small)
+   * Name, duration
+   * "Change" link → Back to catalog
+* Pet Card
+   * Pet photo, name
+   * "Change" link → Pet selector
+Date Selection
+* Calendar View
+   * Shows current month
+   * Disabled dates: Past dates, fully booked dates
+   * Available dates: Normal style
+   * Today: Highlighted
+   * Selected: Primary color background
+* Quick Select Chips
+   * [Today] [Tomorrow] [This Weekend]
+Time Slot Selection
+* Appears after date selected
+* Morning | Afternoon | Evening tabs
+* Grid of time slots (2-3 columns)
+   * Each slot shows time: "9:00 AM"
+   * Available: White background
+   * Booked: Grayed out
+   * Selected: Primary color
+Location Type Selector
+* Two options (Toggle or Cards):
+   * 🏠 Home Service
+      * "We'll come to you"
+      * Shows address dropdown if selected
+      * Address card with edit option
+   * 🚐 Care Van
+      * "Visit our mobile care unit"
+      * Shows nearest van location on mini map
+      * Distance display: "2.3 km away"
+Add-ons Section (Expandable)
+* Title: "Make it special" or "Add-ons"
+* Cards for each addon:
+   * Premium Shampoo (₹150)
+   * De-shedding Treatment (₹200)
+   * Teeth Cleaning (₹100)
+* Checkbox selection
+* Quantity selector for applicable items
+Promo Code Section
+* Input field: "Have a promo code?"
+* Apply Button
+* If applied: Shows green checkmark + "FIRST50 applied (-₹250)"
+* Remove option if applied
+Price Breakdown Card (Sticky Bottom)
+* Service Price: ₹500 or "FREE" (if subscription)
+* Add-ons: ₹150
+* Subtotal: ₹650
+* Discount: -₹250 (if promo)
+* Total: ₹400 (Large, bold)
+* Subscription Note: "Using 1 of 3 quota" (if applicable)
+Confirm Booking Button
+* Full width, primary color
+* "Confirm & Pay ₹400" or "Confirm Booking" (if free)
+* Disabled until: date + time + location selected
+API Flow
+When screen loads:
+API: GET /services/catalog/:service_id/slots?date=2024-01-15&location_type_id=1
+Response:
+{
+  "success": true,
+  "data": {
+    "available_dates": ["2024-01-15", "2024-01-16", "2024-01-17"],
+    "slots": {
+      "2024-01-15": {
+        "morning": ["09:00:00", "10:00:00", "11:00:00"],
+        "afternoon": ["14:00:00", "15:00:00"],
+        "evening": ["18:00:00"]
+      }
+    }
+  }
+}
+
+
+Action:
+* Populate calendar with available dates
+* Show time slots for selected date
+________________
+
+
+When user selects different date:
+API: Same as above with new date parameter
+Action: Update time slots section
+________________
+
+
+When Promo Code "Apply" tapped:
+API: POST /config/promo-codes/validate
+Request:
+{
+  "promo_code": "FIRST50",
+  "service_id": "...",
+  "subtotal": 650
+}
+
+
+Response Success:
+{
+  "success": true,
+  "data": {
+    "is_valid": true,
+    "discount_amount": 250,
+    "discount_type": "percentage",
+    "discount_value": 50,
+    "final_amount": 400,
+    "message": "50% discount applied!"
+  }
+}
+
+
+Action:
+* Show success message
+* Update price breakdown
+* Show remove icon next to promo
+Response Error:
+{
+  "success": false,
+  "message": "Invalid or expired promo code",
+  "error_code": "INVALID_PROMO"
+}
+
+
+Action:
+* Show error below input
+* Shake animation on input field
+________________
+
+
+When "Confirm Booking" tapped:
+First: Calculate Final Price
+API: POST /services/bookings/calculate-price
+Request:
+{
+  "service_id": "...",
+  "pet_id": "...",
+  "booking_date": "2024-01-15",
+  "booking_time": "10:00:00",
+  "location_type_id": 1,
+  "address_id": "...",
+  "addons": [
+    {
+      "addon_type": "product",
+      "addon_name": "Premium Shampoo",
+      "unit_price": 150,
+      "quantity": 1
+    }
+  ],
+  "promo_code": "FIRST50",
+  "use_subscription": true
+}
+
+
+Response:
+{
+  "success": true,
+  "data": {
+    "breakdown": {
+      "service_price": 0,
+      "addons_total": 150,
+      "subtotal": 150,
+      "discount_amount": 0,
+      "total_amount": 150,
+      "subscription_used": true,
+      "quota_deducted": 1
+    }
+  }
+}
+
+
+Action:
+* Show final price confirmation dialog
+* "You'll pay ₹150 (1 grooming quota will be used)"
+Then: Create Booking
+API: POST /services/bookings
+Request:
+{
+  "service_id": "...",
+  "pet_id": "...",
+  "booking_date": "2024-01-15",
+  "booking_time": "10:00:00",
+  "location_type_id": 1,
+  "address_id": "...",
+  "addons": [...],
+  "promo_code": "FIRST50",
+  "use_subscription": true
+}
+
+
+Response Success:
+{
+  "success": true,
+  "message": "Booking created successfully",
+  "data": {
+    "booking": {
+      "booking_id": "...",
+      "booking_number": "TT2024001234",
+      "status": "pending",
+      "total_amount": 150,
+      "payment_required": true,
+      "invoice_id": "..."
+    }
+  }
+}
+
+
+Action:
+* If payment_required: true → Navigate to Payment Screen
+* If payment_required: false (fully covered by subscription):
+   * Show success animation
+   * Navigate to Booking Confirmation Screen
+Response Error (Slot taken):
+{
+  "success": false,
+  "message": "Selected time slot is no longer available",
+  "error_code": "SLOT_UNAVAILABLE"
+}
+
+
+Action:
+* Show error dialog
+* Refresh slot availability
+* Highlight conflicting slot
+________________
+
+
+10. PAYMENT SCREEN
+UI Components
+Order Summary (Top)
+* Service name
+* Date & Time
+* Pet name
+* Location type
+* Total Amount (large): ₹150
+Saved Payment Methods
+* Credit/Debit Cards (if saved)
+   * Visa •••• 1234
+   * Radio button to select
+   * "Remove" option (swipe left)
+* UPI (if saved)
+   * user@okicici
+* "+ Add New Payment Method" button
+New Payment Section (if adding new)
+* Tabs: Card | UPI | Net Banking | Wallets
+* Card Tab:
+   * Card number input
+   * Expiry & CVV
+   * Cardholder name
+   * "Save for future" checkbox
+* UPI Tab:
+   * UPI ID input
+   * "Verify" button
+* Wallets Tab:
+   * Paytm, PhonePe, GooglePay options
+Pay Button (Sticky Bottom)
+* "Pay ₹150" (full width, primary)
+* "Powered by Razorpay" (small text)
+* Payment icons (Visa, Mastercard, UPI)
+API Flow
+On Screen Load:
+API: GET /payments/methods
+Response:
+{
+  "success": true,
+  "data": {
+    "payment_methods": [
+      {
+        "method_id": "...",
+        "method_type": "card",
+        "last_four": "1234",
+        "card_brand": "visa",
+        "is_default": true
+      },
+      {
+        "method_id": "...",
+        "method_type": "upi",
+        "upi_id": "user@okicici"
+      }
+    ]
+  }
+}
+
+
+Action: Display saved methods
+________________
+
+
+When "Pay" button tapped:
+Step 1: Initiate Payment
+API: POST /payments/process
+Request:
+{
+  "invoice_id": "...",
+  "payment_method_id": "...",
+  "payment_gateway": "razorpay"
+}
+
+
+Response:
+{
+  "success": true,
+  "data": {
+    "payment_id": "...",
+    "gateway_order_id": "order_MbT4H2jKxCqBg5",
+    "amount": 150,
+    "currency": "INR",
+    "gateway_key": "rzp_live_xxxxx"
+  }
+}
+
+
+Action:
+* Open Razorpay SDK with order details
+* User completes payment in gateway
+Step 2: Payment Gateway Callback
+User completes/fails payment → Gateway returns response
+API: POST /payments/verify/:payment_id
+Request:
+{
+  "razorpay_order_id": "order_MbT4H2jKxCqBg5",
+  "razorpay_payment_id": "pay_MbT5dIC2rJqnFe",
+  "razorpay_signature": "abc123..."
+}
+
+
+Response Success:
+{
+  "success": true,
+  "message": "Payment verified successfully",
+  "data": {
+    "payment_status": "success",
+    "booking_id": "...",
+    "booking_status": "confirmed"
+  }
+}
+
+
+Action:
+* Close payment screen
+* Show success animation
+* Navigate to Booking Confirmation Screen
+Response Failure:
+{
+  "success": false,
+  "message": "Payment failed",
+  "error_code": "PAYMENT_FAILED",
+  "data": {
+    "booking_id": "...",
+    "booking_status": "pending"
+  }
+}
+
+
+Action:
+* Show error dialog: "Payment failed. Please try again"
+* Options: "Retry Payment" | "Cancel Booking"
+* If retry → Stay on payment screen
+* If cancel → Call cancel booking API
+________________
+
+
+11. BOOKING CONFIRMATION SCREEN
+UI Components
+Success Animation
+* Green checkmark animation
+* Confetti effect
+Booking Details Card
+* Booking Number: TT2024001234
+* Status Badge: "Confirmed" (green)
+* Service: Full Body Grooming
+* For: Buddy (with pet photo)
+* Date: Monday, 15 Jan 2024
+* Time: 10:00 AM - 11:00 AM
+* Location: Home Service
+* Address: Full address
+* Amount Paid: ₹150 (or "FREE - Subscription Used")
+Caregiver Info (if assigned)
+* Profile photo
+* Name: Sarah Smith
+* Rating: ★ 4.9 (156 reviews)
+* "View Profile" link
+* Call | Message buttons
+Next Steps Section
+* "What happens next?"
+   1. Caregiver will confirm 1 hour before
+   2. You'll receive tracking link
+   3. Rate your experience after service
+Action Buttons
+* Add to Calendar (exports to native calendar)
+* Share Booking (WhatsApp, SMS)
+* View Booking Details → Navigate to Booking Details Screen
+* Back to Home (primary button)
+Bottom: Rating Reminder
+* "We'll remind you to rate Sarah after the service"
+API Calls
+On Screen Load:
+API: GET /services/bookings/:booking_id
+Response:
+{
+  "success": true,
+  "data": {
+    "booking": {
+      "booking_id": "...",
+      "booking_number": "TT2024001234",
+      "service_name": "Full Body Grooming",
+      "pet_name": "Buddy",
+      "pet_photo_url": "...",
+      "booking_date": "2024-01-15",
+      "booking_time": "10:00:00",
+      "status": "confirmed",
+      "location_type": "home_service",
+      "address": {...},
+      "total_amount": 150,
+      "caregiver": {
+        "caregiver_id": "...",
+        "full_name": "Sarah Smith",
+        "photo_url": "...",
+        "rating": 4.9,
+        "review_count": 156,
+        "phone": "+919876543210"
+      }
+    }
+  }
+}
+
+
+Action: Populate all sections
+________________
+
+
+When "Add to Calendar" tapped:
+* Create calendar event with:
+   * Title: "Grooming - Buddy"
+   * Date/Time from booking
+   * Location: Address
+   * Notes: Booking number, caregiver name
+* Open native calendar app
+________________
+
+
+12. MY BOOKINGS SCREEN
+UI Components
+Top Tabs
+* Upcoming (default)
+* Completed
+* Cancelled
+Filters (in Upcoming)
+* All Pets dropdown
+* Sort: Date | Service Type
+Booking Cards (Each)
+* Left: Service icon
+* Center:
+   * Service name
+   * Pet name (with small photo)
+   * Date & Time
+   * Status badge
+* Right: "Track" button (if in_progress) or menu (⋮)
+Menu Options (⋮)
+* View Details
+* Reschedule
+* Cancel Booking
+* Download Invoice (if paid)
+Empty States
+* No Upcoming: "No upcoming bookings" + "Book a service" button
+* No Completed: "Complete a booking to see it here"
+API Calls
+On Screen Load:
+API: GET /services/bookings?status=upcoming&pet_id={filter}
+Response:
+{
+  "success": true,
+  "data": {
+    "bookings": [
+      {
+        "booking_id": "...",
+        "booking_number": "TT2024001234",
+        "service_name": "Full Body Grooming",
+        "service_icon_url": "...",
+        "pet_name": "Buddy",
+        "pet_photo_url": "...",
+        "booking_date": "2024-01-15",
+        "booking_time": "10:00:00",
+        "status": "confirmed",
+        "can_track": false,
+        "can_reschedule": true,
+        "can_cancel": true,
+        "caregiver_name": "Sarah Smith"
+      }
+    ],
+    "total_count": 5
+  }
+}
+
+
+Action: Display booking cards
+________________
+
+
+When "Cancel" tapped:
+Shows Cancellation Dialog:
+* "Are you sure you want to cancel?"
+* Cancellation policy info:
+   * "Full refund if cancelled 24h before"
+   * "50% refund if 12-24h before"
+   * "No refund if <12h"
+* Reason dropdown (required)
+* "Confirm Cancellation" button
+API: POST /services/bookings/:id/cancel
+Request:
+{
+  "cancellation_reason": "Change of plans",
+  "reason_code": "schedule_conflict"
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Booking cancelled successfully",
+  "data": {
+    "refund_amount": 150,
+    "refund_status": "processing",
+    "refund_eta": "3-5 business days"
+  }
+}
+
+
+Action:
+* Close dialog
+* Show success message
+* Remove from upcoming list
+* Move to cancelled tab
+* If refund → Show refund info banner
+________________
+
+
+When "Reschedule" tapped:
+Navigate to Reschedule Screen (similar to booking screen)
+API: POST /services/bookings/:id/reschedule
+Request:
+{
+  "new_date": "2024-01-16",
+  "new_time": "14:00:00",
+  "reason": "Not available on original date"
+}
+
+
+Response Success:
+{
+  "success": true,
+  "message": "Booking rescheduled successfully",
+  "data": {
+    "booking": {
+      "booking_id": "...",
+      "booking_date": "2024-01-16",
+      "booking_time": "14:00:00"
+    }
+  }
+}
+
+
+Action:
+* Show success message
+* Update booking in list
+* Send notification
+Response Error (Max reschedules):
+{
+  "success": false,
+  "message": "Maximum reschedule limit reached (2 times)",
+  "error_code": "RESCHEDULE_LIMIT_EXCEEDED"
+}
+
+
+Action:
+* Show error dialog
+* Suggest cancellation instead
+________________
+
+
+13. BOOKING TRACKING SCREEN (Live Tracking)
+UI Components
+Map View (Top 60%)
+* Full map showing:
+   * User's location (home pin)
+   * Caregiver's live location (moving marker)
+   * Route between them (polyline)
+   * ETA overlay
+Bottom Sheet (40%, Draggable)
+Caregiver Card:
+* Photo (circular)
+* Name: Sarah Smith
+* Rating: ★ 4.9
+* Vehicle: Honda Activa (MH 12 AB 1234)
+* Call | Message buttons
+Status Timeline:
+* ✅ Booking Confirmed (10:00 AM)
+* ✅ Caregiver Assigned (10:15 AM)
+* 🔵 On the way (current)
+   * ETA: 15 mins
+   * Distance: 2.3 km
+* ⏳ Service In Progress (pending)
+* ⏳ Completed (pending)
+Live Updates Section:
+* "Sarah is 2.3 km away"
+* "Arriving in 15 minutes"
+* Auto-updates every 30 seconds
+API & WebSocket
+On Screen Load:
+API: GET /tracking/sessions?booking_id={booking_id}
+Response:
+{
+  "success": true,
+  "data": {
+    "session": {
+      "session_id": "...",
+      "booking_id": "...",
+      "caregiver_id": "...",
+      "session_type": "service_tracking",
+      "status": "in_transit",
+      "current_location": {
+        "latitude": 19.0760,
+        "longitude": 72.8777,
+        "updated_at": "2024-01-15T09:45:00Z"
+      },
+      "destination": {
+        "latitude": 19.0820,
+        "longitude": 72.8850
+      }
+    },
+    "caregiver": {
+      "full_name": "Sarah Smith",
+      "photo_url": "...",
+      "rating": 4.9,
+      "phone": "+919876543210",
+      "vehicle_number": "MH 12 AB 1234"
+    }
+  }
+}
+
+
+Action:
+* Initialize map
+* Show caregiver location
+* Start WebSocket connection
+________________
+
+
+WebSocket Connection:
+Connect: wss://api.tailsandtales.com/tracking
+Subscribe to: tracking:session:{session_id}
+Receive Location Updates (every 30s):
+{
+  "event": "location_update",
+  "data": {
+    "session_id": "...",
+    "latitude": 19.0765,
+    "longitude": 72.8780,
+    "speed": 25,
+    "heading": 180,
+    "timestamp": "2024-01-15T09:45:30Z"
+  }
+}
+
+
+Action:
+* Animate marker to new position
+* Update route polyline
+* Recalculate ETA
+Receive Status Updates:
+{
+  "event": "status_update",
+  "data": {
+    "status": "arrived",
+    "message": "Sarah has arrived at your location",
+    "timestamp": "2024-01-15T10:00:00Z"
+  }
+}
+
+
+Action:
+* Update timeline
+* Show notification
+* Change bottom sheet to "Service In Progress"
+________________
+
+
+Calculate ETA (Real-time):
+API: POST /tracking/sessions/:session_id/calculate-eta
+Request:
+{
+  "destination_latitude": 19.0820,
+  "destination_longitude": 72.8850
+}
+
+
+Response:
+{
+  "success": true,
+  "data": {
+    "eta_seconds": 900,
+    "eta_display": "15 mins",
+    "distance_meters": 2300,
+    "distance_display": "2.3 km"
+  }
+}
+
+
+Action: Update ETA display
+________________
+
+
+When Caregiver Starts Service:
+WebSocket Event:
+{
+  "event": "service_started",
+  "data": {
+    "started_at": "2024-01-15T10:00:00Z",
+    "estimated_completion": "2024-01-15T11:00:00Z"
+  }
+}
+
+
+Action:
+* Update timeline
+* Show "Service In Progress" screen
+* Hide map, show service details
+* Start service timer
+________________
+
+
+14. SUBSCRIPTIONS SCREEN
+UI Components
+Current Subscription Card (if active)
+* Tier Badge: "Plus Member" (with icon)
+* Status: Active (green dot)
+* Billing: "Next billing on Feb 1, 2024"
+* Amount: ₹999/month
+* Manage Button: Opens menu
+   * Upgrade
+   * Downgrade
+   * Pause
+   * Cancel
+Quota Usage Section (if active)
+* Monthly Quotas:
+   * Grooming: 1 of 1 used (Progress bar)
+   * Vet Visits: 1 of 4 used
+   * Training: 0 of 3 used
+* Resets on: Feb 1, 2024
+Available Tiers Section (if no subscription OR to upgrade)
+Three Tier Cards (vertically scrollable):
+1. Basic Tier Card:
+* Badge: "Most Popular"
+* Price: ₹499/month or ₹4,999/year (Save 17%)
+* Features (with checkmarks):
+   * ✅ 1 Grooming per month
+   * ✅ 2 Vet visits per year
+   * ✅ 1-3 Training sessions per month
+   * ✅ Health tracking
+   * ✅ Vaccination reminders
+* "Subscribe" Button
+2. Plus Tier Card (Highlighted):
+* Popular Badge
+* Price: ₹999/month or ₹9,999/year (Save 17%)
+* Features:
+   * ✅ Everything in Basic
+   * ✅ Quarterly vet visits (4/year)
+   * ✅ 5 days boarding per month
+   * ✅ 3 training sessions per month
+   * ✅ Priority booking
+   * ✅ 20% discounts on add-ons
+* "Subscribe" Button
+3. Eternal Tier Card:
+* Premium Badge (gold)
+* Price: ₹2,999/month or ₹29,999/year
+* Features:
+   * ✅ Everything Unlimited*
+   * ✅ Monthly vet visits
+   * ✅ Weekly training
+   * ✅ Dedicated care manager
+   * ✅ 24/7 GPS tracking
+   * ✅ Full boarding/daycare
+   * ✅ Priority emergency
+* Small text: *Fair usage applies
+* "Subscribe" Button
+Billing Cycle Toggle (on each card)
+* [ Monthly ] / [ Annual ] (Save 17%)
+* Updates price dynamically
+Comparison Table Link
+* "Compare all plans" → Opens detailed comparison
+API Calls
+On Screen Load:
+API 1: GET /subscriptions/me/active?pet_id={active_pet_id}
+Response with Subscription:
+{
+  "success": true,
+  "data": {
+    "subscription": {
+      "subscription_id": "...",
+      "pet_id": "...",
+      "pet_name": "Buddy",
+      "tier_id": 2,
+      "tier_name": "Plus",
+      "billing_cycle": "monthly",
+      "amount": 999,
+      "status": "active",
+      "next_billing_date": "2024-02-01",
+      "auto_renew": true,
+      "entitlements": {
+        "grooming": { "total": 1, "used": 1, "remaining": 0 },
+        "vet_visits": { "total": 4, "used": 1, "remaining": 3 },
+        "training": { "total": 3, "used": 0, "remaining": 3 },
+        "boarding_days": { "total": 5, "used": 0, "remaining": 5 }
+      }
+    }
+  }
+}
+
+
+Action: Show current subscription card + quota
+Response without Subscription:
+{
+  "success": true,
+  "data": {
+    "subscription": null
+  }
+}
+
+
+Action: Only show available tiers
+________________
+
+
+API 2: GET /subscriptions/tiers
+Response:
+{
+  "success": true,
+  "data": {
+    "tiers": [
+      {
+        "tier_id": 1,
+        "tier_name": "Basic",
+        "tier_code": "BASIC",
+        "description": "Essential care for your pet",
+        "monthly_price": 499,
+        "annual_price": 4999,
+        "features": [
+          { "feature": "grooming", "quota": 1, "period": "month" },
+          { "feature": "vet_visits", "quota": 2, "period": "year" }
+        ],
+        "is_popular": true
+      },
+      {
+        "tier_id": 2,
+        "tier_name": "Plus",
+        "monthly_price": 999,
+        "annual_price": 9999
+      },
+      {
+        "tier_id": 3,
+        "tier_name": "Eternal",
+        "monthly_price": 2999,
+        "annual_price": 29999,
+        "features": [
+          { "feature": "unlimited", "quota": null }
+        ]
+      }
+    ]
+  }
+}
+
+
+Action: Display tier cards
+________________
+
+
+When "Subscribe" button tapped:
+Opens Subscription Purchase Bottom Sheet:
+* Selected Tier Summary
+* Pet Selector (dropdown)
+* Billing Cycle Selector (Monthly/Annual)
+* Promo Code Input
+* Price Breakdown:
+   * Tier price: ₹999
+   * Discount: -₹100 (if promo)
+   * Total: ₹899
+* Terms Checkbox
+* "Proceed to Payment" button
+API: POST /subscriptions/calculate-price
+Request:
+{
+  "tier_id": 2,
+  "billing_cycle_id": 1,
+  "promo_code": "WELCOME100"
+}
+
+
+Response:
+{
+  "success": true,
+  "data": {
+    "tier_price": 999,
+    "discount_amount": 100,
+    "final_amount": 899,
+    "promo_applied": true
+  }
+}
+
+
+Action: Update price in bottom sheet
+________________
+
+
+When "Proceed to Payment" tapped:
+API: POST /subscriptions/me/subscriptions
+Request:
+{
+  "pet_id": "...",
+  "tier_id": 2,
+  "billing_cycle_id": 1,
+  "promo_code": "WELCOME100"
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Subscription created",
+  "data": {
+    "subscription_id": "...",
+    "invoice_id": "...",
+    "amount_to_pay": 899,
+    "payment_required": true
+  }
+}
+
+
+Action:
+* Navigate to Payment Screen
+* After payment success → Show Subscription Activated Screen
+* Update subscription status locally
+________________
+
+
+When "Upgrade" tapped (from menu):
+Shows Upgrade Dialog:
+* Current tier: Plus (₹999/month)
+* New tier: Eternal (₹2,999/month)
+* Prorated charge: ₹1,500 (for remaining days)
+* Benefits: Immediate access to new features
+* Quotas will reset
+* "Confirm Upgrade" button
+API: POST /subscriptions/me/subscriptions/:id/upgrade
+Request:
+{
+  "new_tier_id": 3,
+  "immediate": true
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Subscription upgraded successfully",
+  "data": {
+    "prorated_charge": 1500,
+    "new_next_billing_date": "2024-02-01",
+    "invoice_id": "..."
+  }
+}
+
+
+Action:
+* Process payment if needed
+* Update subscription display
+* Show success message
+* Refresh quotas
+________________
+
+
+15. PET PROFILE & HEALTH SCREEN
+UI Components
+Pet Header Card
+* Large pet photo (circular, editable)
+* Pet name (editable on tap)
+* Basic info row:
+   * Species icon + name
+   * Age: "4 years 2 months"
+   * Life stage badge: "Adult"
+* Quick stats:
+   * Weight: 25.5 kg (with trend icon ↑↓)
+   * Last vet visit: "Dec 15, 2023"
+   * Vaccinations: "Up to date" (green) or "Due" (orange)
+* Edit Profile button
+Tab Navigation
+* Health (default)
+* Records
+* Insurance
+* Growth
+________________
+
+
+Health Tab
+Vaccination Card:
+* Next Due: Rabies - Feb 15, 2024 (15 days)
+* Completed: List of past vaccinations
+   * Rabies - Jan 15, 2023 ✅
+   * DHPP - Jan 15, 2023 ✅
+* "+ Add Vaccination" button
+Medications Card:
+* Active Medications:
+   * Apoquel 5mg
+   * "Once daily at 9:00 AM"
+   * Reminder toggle: ON
+   * Start: Jan 1, 2024 | Ongoing
+   * "Mark as Given" button
+* "+ Add Medication" button
+Allergies & Conditions:
+* Food allergies: Chicken
+* Medical conditions: Hip Dysplasia
+* "+ Add" button
+________________
+
+
+Records Tab
+Filter chips: All | Vet Visits | Vaccinations | Medications | Surgeries
+Record Cards (chronological):
+* Annual Checkup (Jan 10, 2024)
+   * Type badge: Vet Visit
+   * Veterinarian: Dr. Smith
+   * Notes: "Healthy, no issues"
+   * Cost: ₹500
+   * Attachments: 2 files
+   * View Details link
+"+ Add Record" floating button
+________________
+
+
+Insurance Tab
+Current Policy Card (if exists):
+* Insurer logo
+* Policy number: POL123456
+* Coverage: ₹2,00,000
+* Valid: Jan 1, 2024 - Dec 31, 2024
+* Premium: ₹12,000/year
+* Renewal reminder: "Renews in 45 days"
+* Download Policy | Renew buttons
+If no insurance:
+* Empty state illustration
+* "Protect Buddy with insurance"
+* "Add Insurance" button
+________________
+
+
+Growth Tab
+Weight Chart:
+* Line graph showing weight over time
+* X-axis: Months
+* Y-axis: Weight (kg)
+* Data points are tappable (shows exact date/weight)
+* Trend indicator: "↑ Gained 2kg in 3 months"
+Recent Measurements (list):
+* Jan 10, 2024: 25.5 kg, 55 cm height
+* Dec 10, 2023: 24.0 kg
+* "+ Add Measurement" button
+API Calls
+On Screen Load:
+API 1: GET /pets/:pet_id
+Response:
+{
+  "success": true,
+  "data": {
+    "pet": {
+      "pet_id": "...",
+      "name": "Buddy",
+      "photo_url": "...",
+      "species_name": "Dog",
+      "breed": "Golden Retriever",
+      "date_of_birth": "2020-01-01",
+      "age_display": "4 years 2 months",
+      "age_months": 50,
+      "life_stage_name": "Adult",
+      "gender_name": "Male",
+      "weight": 25.5,
+      "color": "Golden"
+    }
+  }
+}
+
+
+Action: Populate header card
+________________
+
+
+API 2: GET /pets/:pet_id/vaccinations
+Response:
+{
+  "success": true,
+  "data": {
+    "vaccinations": [
+      {
+        "vaccination_id": "...",
+        "vaccine_name": "Rabies",
+        "vaccination_date": "2023-01-15",
+        "next_due_date": "2024-02-15",
+        "days_until_due": 15,
+        "is_overdue": false,
+        "veterinarian_name": "Dr. Smith",
+        "batch_number": "RAB123"
+      }
+    ]
+  }
+}
+
+
+Action: Display in Health tab
+________________
+
+
+API 3: GET /pets/:pet_id/medications
+Response:
+{
+  "success": true,
+  "data": {
+    "medications": [
+      {
+        "medication_id": "...",
+        "medication_name": "Apoquel",
+        "dosage": "5mg",
+        "frequency": "Once daily",
+        "start_date": "2024-01-01",
+        "end_date": null,
+        "is_active": true,
+        "reminder_enabled": true,
+        "reminder_times": ["09:00"],
+        "notes": "For allergies"
+      }
+    ]
+  }
+}
+
+
+________________
+
+
+API 4: GET /pets/:pet_id/health-records?page=1&limit=20
+Response:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "record_id": "...",
+        "record_type": "vet_visit",
+        "title": "Annual Checkup",
+        "record_date": "2024-01-10",
+        "veterinarian_name": "Dr. Smith",
+        "notes": "Healthy, no issues",
+        "cost": 500,
+        "attachments": [
+          {
+            "file_name": "report.pdf",
+            "file_url": "..."
+          }
+        ]
+      }
+    ],
+    "total_count": 15
+  }
+}
+
+
+________________
+
+
+API 5: GET /pets/:pet_id/insurance
+Response:
+{
+  "success": true,
+  "data": {
+    "insurance": {
+      "insurance_id": "...",
+      "insurer_name": "PetCover",
+      "policy_number": "POL123456",
+      "coverage_amount": 200000,
+      "premium_amount": 12000,
+      "start_date": "2024-01-01",
+      "end_date": "2024-12-31",
+      "renewal_reminder_days": 45
+    }
+  }
+}
+
+
+________________
+
+
+API 6: GET /pets/:pet_id/growth
+Response:
+{
+  "success": true,
+  "data": {
+    "measurements": [
+      {
+        "measurement_id": "...",
+        "measurement_date": "2024-01-10",
+        "weight": 25.5,
+        "height": 55.0
+      },
+      {
+        "measurement_date": "2023-12-10",
+        "weight": 24.0
+      }
+    ]
+  }
+}
+
+
+Action: Generate chart and list
+________________
+
+
+When "+ Add Vaccination" tapped:
+Opens Add Vaccination Form:
+* Vaccine name (dropdown with common vaccines)
+* Vaccination date (calendar)
+* Next due date (auto-calculated or manual)
+* Veterinarian name
+* Batch number (optional)
+* Notes (optional)
+* "Save" button
+API: POST /pets/:pet_id/vaccinations
+Request:
+{
+  "vaccine_name": "DHPP",
+  "vaccination_date": "2024-01-15",
+  "next_due_date": "2025-01-15",
+  "veterinarian_name": "Dr. Smith",
+  "batch_number": "DHPP456"
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Vaccination added successfully",
+  "data": {
+    "vaccination": {
+      "vaccination_id": "...",
+      "vaccine_name": "DHPP",
+      "next_due_date": "2025-01-15"
+    }
+  }
+}
+
+
+Action:
+* Close form
+* Refresh vaccination list
+* Show success message
+* Set reminder notification
+________________
+
+
+16. COMMUNITY EVENTS SCREEN
+UI Components
+Header
+* Back button
+* Search icon
+* Filter icon (Event type, Date, Location)
+Featured Event Banner (if any)
+* Large hero image
+* Event name
+* Date & time
+* Location
+* Quick "Register" button
+Event Filters (Chips)
+* All (default)
+* Socialization
+* Training Workshops
+* Health Camps
+* Competitions
+* Meetups
+Event Cards (Grid/List)
+Each card shows:
+* Event image
+* Event type badge (top-left)
+* Event name
+* Date: "Jan 20, 2024 • 10:00 AM"
+* Location: "Central Park, Pune"
+* Access level:
+   * FREE (Basic members)
+   * FREE (Plus/Eternal only)
+   * ₹500 (paid event)
+* Capacity: "25/50 registered"
+* Status:
+   * "Register" button (if spots available)
+   * "Join Waitlist" (if full)
+   * "Registered" badge (if user registered)
+My Registrations Section
+* Quick link: "View My Registrations (3)"
+* Shows upcoming events user is registered for
+API Calls
+On Screen Load:
+API: GET /community/events?upcoming=true&page=1
+Response:
+{
+  "success": true,
+  "data": {
+    "events": [
+      {
+        "event_id": "...",
+        "event_name": "Dog Park Meetup",
+        "event_type": "socialization",
+        "event_date": "2024-01-20T10:00:00Z",
+        "location_name": "Central Park",
+        "location_address": "Central Park, Pune",
+        "latitude": 18.5204,
+        "longitude": 73.8567,
+        "image_url": "...",
+        "description": "Join fellow dog owners...",
+        "max_capacity": 50,
+        "registered_count": 25,
+        "is_full": false,
+        "access_level": "all",
+        "price": 0,
+        "user_registration_status": null,
+        "is_featured": true
+      }
+    ],
+    "total_count": 15
+  }
+}
+
+
+Action: Display event cards
+________________
+
+
+When "Register" tapped:
+Opens Registration Form Bottom Sheet:
+* Event summary
+* Pet selector (dropdown)
+   * Shows eligible pets only
+   * Some events may be species-specific
+* Number of pets (if event allows multiple)
+* Special requirements (textarea)
+   * "Any special needs or requirements?"
+* Emergency contact (pre-filled from profile)
+* Terms checkbox
+   * "I agree to event terms and conditions"
+* Price breakdown (if paid event)
+* "Confirm Registration" button
+API: POST /community/events/:event_id/register
+Request:
+{
+  "pet_id": "...",
+  "special_requirements": "Buddy is shy with new dogs",
+  "emergency_contact_phone": "+919876543210"
+}
+
+
+Response Success:
+{
+  "success": true,
+  "message": "Registration successful! See you at the event 🎉",
+  "data": {
+    "registration": {
+      "registration_id": "...",
+      "event_id": "...",
+      "event_name": "Dog Park Meetup",
+      "event_date": "2024-01-20T10:00:00Z",
+      "qr_code_url": "...",
+      "registration_number": "REG2024001"
+    }
+  }
+}
+
+
+Action:
+* Close bottom sheet
+* Show success message
+* Update card status to "Registered"
+* Add calendar reminder option
+* Show QR code for check-in
+Response Error (Event Full):
+{
+  "success": false,
+  "message": "Event is now full",
+  "error_code": "EVENT_FULL",
+  "data": {
+    "waitlist_available": true
+  }
+}
+
+
+Action:
+* Show "Event Full" dialog
+* Offer "Join Waitlist" option
+________________
+
+
+When "Join Waitlist" tapped:
+API: POST /community/events/:event_id/waitlist
+Request:
+{
+  "pet_id": "..."
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Added to waitlist. We'll notify you if a spot opens!",
+  "data": {
+    "waitlist_position": 5
+  }
+}
+
+
+Action:
+* Update UI: "Waitlisted (#5)"
+* Show confirmation
+________________
+
+
+17. MY EVENT REGISTRATIONS SCREEN
+UI Components
+Tabs
+* Upcoming (default)
+* Past
+* Waitlisted
+Registration Cards
+Each shows:
+* Event image (small)
+* Event name
+* Date & time
+* Location
+* Pet registered: "Buddy"
+* Registration number
+* Actions:
+   * View QR Code (for check-in)
+   * View Details
+   * Cancel Registration
+* Status badge: "Confirmed" or "Checked In"
+QR Code (Bottom sheet when tapped)
+* Large QR code for event check-in
+* Registration number
+* "Show this at the event entrance"
+API Call
+API: GET /community/registrations?status=upcoming
+Response:
+{
+  "success": true,
+  "data": {
+    "registrations": [
+      {
+        "registration_id": "...",
+        "event_name": "Dog Park Meetup",
+        "event_date": "2024-01-20T10:00:00Z",
+        "event_image_url": "...",
+        "location_name": "Central Park",
+        "pet_name": "Buddy",
+        "registration_number": "REG2024001",
+        "qr_code_url": "...",
+        "status": "confirmed",
+        "can_cancel": true
+      }
+    ]
+  }
+}
+
+
+________________
+
+
+When "Cancel Registration" tapped:
+API: POST /community/registrations/:id/cancel
+Request:
+{
+  "cancellation_reason": "Schedule conflict"
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Registration cancelled. Refund will be processed if applicable."
+}
+
+
+________________
+
+
+18. NOTIFICATIONS SCREEN
+UI Components
+Top Actions
+* Mark All as Read (text button, right)
+* Filter icon
+Notification Cards (Grouped by Date)
+Today
+* Booking Reminder (🔔)
+   * "Your grooming appointment is tomorrow at 10 AM"
+   * Time: "2 hours ago"
+   * Unread dot (blue)
+   * Tap → Navigate to Booking Details
+Yesterday
+* Vaccination Reminder (💉)
+   * "Rabies vaccination is due in 3 days"
+   * Time: "Yesterday, 9:00 AM"
+   * Read (no dot)
+   * Tap → Navigate to Vaccination Details
+Notification Types with Actions:
+* Booking Confirmed: → Booking Details
+* Payment Success: → Invoice/Receipt
+* Caregiver Assigned: → Caregiver Profile
+* Service Started: → Live Tracking
+* Service Completed: → Rate Service
+* Subscription Expiring: → Renew Subscription
+* Health Reminder: → Health Records
+* Promo Available: → Services Catalog with promo applied
+Swipe Actions
+* Swipe left: Delete
+* Swipe right: Mark as Read/Unread
+Filter Options (Bottom Sheet)
+* All (default)
+* Bookings
+* Payments
+* Health
+* Subscriptions
+* Community
+* Promotional
+API Calls
+On Screen Load:
+API: GET /notifications?page=1&limit=20
+Response:
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "notification_id": "...",
+        "type": "booking_reminder",
+        "title": "Upcoming Appointment",
+        "message": "Your grooming appointment is tomorrow at 10 AM",
+        "is_read": false,
+        "created_at": "2024-01-14T08:00:00Z",
+        "action_type": "navigate",
+        "action_data": {
+          "screen": "booking_details",
+          "booking_id": "..."
+        },
+        "icon": "calendar"
+      }
+    ],
+    "unread_count": 5,
+    "total_count": 50
+  }
+}
+
+
+Action: Display notifications grouped by date
+________________
+
+
+When notification tapped:
+API: PUT /notifications/:id/read
+Response:
+{
+  "success": true
+}
+
+
+Action:
+* Mark notification as read (remove blue dot)
+* Navigate based on action_type:
+   * navigate → Go to specified screen with data
+   * url → Open URL in webview
+   * none → Just mark as read
+________________
+
+
+When "Mark All as Read" tapped:
+API: PUT /notifications/read-all
+Response:
+{
+  "success": true,
+  "message": "All notifications marked as read"
+}
+
+
+Action:
+* Remove all blue dots
+* Update unread count to 0
+________________
+
+
+19. PROFILE SCREEN
+UI Components
+Header Section
+* Profile Photo (large, circular, editable)
+* Name: "John Doe"
+* Phone: "+91 9876543210"
+* Edit Profile button (pencil icon)
+My Pets Section
+* Horizontal scrollable pet cards
+* Each card:
+   * Pet photo
+   * Name
+   * Age
+   * "View" button
+* "+ Add Pet" card at end
+Subscription Status Card
+* Current Plan: "Plus Member"
+* Status: Active
+* Next billing: "Feb 1, 2024"
+* View Details link
+Quick Actions List
+* 📍 My Addresses → Saved Addresses Screen
+* 💳 Payment Methods → Payment Methods Screen
+* 🔔 Notification Settings → Notification Preferences
+* 🎁 My Promo Codes → Available Promos
+* 📊 Analytics (if Eternal) → Usage Statistics
+* 🎫 My Tickets → Support Tickets
+Settings Section
+* ⚙️ App Settings
+   * Language (English/Hindi)
+   * Theme (Light/Dark/Auto)
+* 🔒 Privacy & Security
+   * Active Sessions
+   * Change Phone Number
+   * Two-Factor Auth (if available)
+* 📄 Legal
+   * Terms of Service
+   * Privacy Policy
+   * Cancellation Policy
+Bottom Actions
+* Share App (referral link)
+* Rate Us (Play Store/App Store)
+* Logout (red text)
+API Calls
+On Screen Load:
+API: GET /users/me
+Response:
+{
+  "success": true,
+  "data": {
+    "user": {
+      "user_id": "...",
+      "full_name": "John Doe",
+      "email": "john@example.com",
+      "phone": "+919876543210",
+      "profile_photo_url": "...",
+      "date_of_birth": "1990-01-01",
+      "gender_name": "Male"
+    }
+  }
+}
+
+
+________________
+
+
+When "Logout" tapped:
+Shows Confirmation Dialog:
+* "Are you sure you want to logout?"
+* "Cancel" | "Logout"
+API: POST /auth/logout
+Request:
+{
+  "refresh_token": "..."
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Logged out successfully"
+}
+
+
+Action:
+* Clear all local storage (tokens, user data)
+* Clear navigation stack
+* Navigate to Login Screen
+________________
+
+
+20. CAREGIVER APP - ASSIGNMENT SCREEN
+UI Components (Caregiver-specific)
+Dashboard Tab
+Today's Assignments Card:
+* Count: "5 assignments today"
+* Earnings so far: "₹2,500"
+Assignment Cards (List): Each card shows:
+* Service type icon & name
+* Pet photo & name: "Buddy (Golden Retriever)"
+* Owner name: "John Doe"
+* Location: "Home Service - 2.3 km away"
+* Time: "10:00 AM - 11:00 AM"
+* Status: "Pending" | "Accepted" | "In Progress" | "Completed"
+* Actions:
+   * If Pending: Accept | Reject buttons
+   * If Accepted: View Details | Navigate | Start Service
+   * If In Progress: Complete Service
+Earnings Tab
+* This Week: ₹12,500
+* This Month: ₹45,000
+* Breakdown chart
+* Payout Status: "Next payout on Friday"
+Profile Tab
+* Caregiver rating: ★ 4.9 (234 reviews)
+* Specializations
+* Service areas
+* Availability calendar
+API Calls
+On Screen Load:
+API: GET /caregivers/me/assignments?date=today&status=all
+Response:
+{
+  "success": true,
+  "data": {
+    "assignments": [
+      {
+        "assignment_id": "...",
+        "booking_id": "...",
+        "service_name": "Full Body Grooming",
+        "service_category": "Grooming",
+        "pet_name": "Buddy",
+        "pet_photo_url": "...",
+        "pet_species": "Dog",
+        "pet_breed": "Golden Retriever",
+        "owner_name": "John Doe",
+        "owner_phone": "+919876543210",
+        "booking_date": "2024-01-15",
+        "booking_time": "10:00:00",
+        "duration_minutes": 60,
+        "location_type": "home_service",
+        "address": {
+          "address_line1": "123 Main St",
+          "city": "Mumbai",
+          "latitude": 19.0760,
+          "longitude": 72.8777
+        },
+        "distance_km": 2.3,
+        "status": "pending",
+        "base_payment": 400,
+        "special_instructions": "Buddy is calm but shy",
+        "pet_medical_notes": "No allergies"
+      }
+    ],
+    "today_earnings": 2500,
+    "today_count": 5
+  }
+}
+
+
+Action: Display assignment cards
+________________
+
+
+When "Accept" tapped:
+API: POST /caregivers/me/assignments/:id/accept
+Request: Empty body
+Response:
+{
+  "success": true,
+  "message": "Assignment accepted",
+  "data": {
+    "assignment_id": "...",
+    "status": "accepted"
+  }
+}
+
+
+Action:
+* Update card status to "Accepted"
+* Show success message
+* Enable "Navigate" and "Start Service" buttons
+* Send notification to pet parent
+________________
+
+
+When "Reject" tapped:
+Shows Rejection Reason Dialog:
+* Dropdown: Distance too far | Not available | Wrong specialization | Other
+* Text area for additional notes
+* "Confirm Rejection" button
+API: POST /caregivers/me/assignments/:id/reject
+Request:
+{
+  "rejection_reason": "Distance too far",
+  "notes": "Currently in a different area"
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Assignment rejected. System will reassign."
+}
+
+
+Action:
+* Remove card from list
+* System auto-assigns to next available caregiver
+________________
+
+
+When "Start Service" tapped:
+API: POST /caregivers/me/assignments/:id/start
+Request:
+{
+  "latitude": 19.0760,
+  "longitude": 72.8777,
+  "start_notes": "Arrived at location"
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Service started",
+  "data": {
+    "session_id": "...",
+    "started_at": "2024-01-15T10:00:00Z"
+  }
+}
+
+
+Action:
+* Start service timer
+* Navigate to Service Execution Screen
+* Start GPS tracking
+* Notify pet parent
+________________
+
+
+21. CAREGIVER APP - SERVICE EXECUTION SCREEN
+UI Components
+Timer Section (Top)
+* Large timer: "00:45:32" (running)
+* Estimated completion: "11:00 AM"
+* Pause | Resume buttons
+Checklist Section
+* Pre-Service Checklist:
+
+   * ☑ Verify pet identity
+   * ☑ Check health status
+   * ☑ Review medical notes
+   * ☑ Take before photos
+   * During Service:
+
+      * ☐ Bath completed
+      * ☐ Nail trimming done
+      * ☐ Ear cleaning done
+      * Service-specific items appear here
+Photo Capture
+      * Before Photos (required)
+      * Camera button
+      * Gallery shows captured photos
+      * After Photos (required at completion)
+Notes Section
+      * Service Notes (textarea)
+      * "Buddy was very cooperative today"
+      * Pet Behavior Observed (dropdown + notes)
+      * Happy | Calm | Anxious | Aggressive
+      * Health Observations (optional)
+      * Any concerns noted during service
+Complete Service Button (Bottom)
+      * Disabled until all required fields filled
+      * "Complete Service & Check Out"
+API Flow
+When "Complete Service" tapped:
+Validates:
+      * All checklist items checked
+      * Before & after photos uploaded
+      * Service notes provided
+API: POST /caregivers/me/assignments/:id/complete
+Request:
+{
+  "end_latitude": 19.0760,
+  "end_longitude": 72.8777,
+  "service_notes": "Grooming completed successfully. Buddy was very calm and cooperative.",
+  "pet_behavior_observed": "happy",
+  "health_observations": "All good, no issues noticed",
+  "actual_duration_minutes": 65,
+  "checklist_completed": true,
+  "before_photos": [
+    "https://s3.../before1.jpg",
+    "https://s3.../before2.jpg"
+  ],
+  "after_photos": [
+    "https://s3.../after1.jpg",
+    "https://s3.../after2.jpg"
+  ]
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Service completed successfully!",
+  "data": {
+    "assignment_id": "...",
+    "completion_time": "2024-01-15T11:05:00Z",
+    "earnings": {
+      "base_pay": 400,
+      "distance_bonus": 50,
+      "total_earned": 450
+    },
+    "booking_status": "completed"
+  }
+}
+
+
+Action:
+      * Show success animation
+      * Display earnings breakdown
+      * Stop GPS tracking
+      * Navigate back to assignments list
+      * Notify pet parent of completion
+________________
+
+
+22. CARE MANAGER APP - CLIENT DASHBOARD
+UI Components (Care Manager-specific)
+My Clients Section
+      * Active Clients: 35/50 (capacity indicator)
+      * Search clients bar
+Client Cards (Each):
+      * Pet photo & name
+      * Owner name
+      * Subscription: Eternal
+      * Last check-in: "3 days ago"
+      * Next scheduled: "Jan 20, 2024"
+      * Status indicators:
+      * 🟢 All good
+      * 🟡 Check-in due
+      * 🔴 Urgent attention needed
+      * Quick Actions:
+      * Call | Message | Schedule Check-in
+Pending Actions List
+      * Onboarding Pending: 2 new clients
+      * Check-ins Due: 5 clients
+      * Action Items: 8 pending tasks
+API Calls
+API: GET /care-managers/me/assignments?status=active
+Response:
+{
+  "success": true,
+  "data": {
+    "assignments": [
+      {
+        "assignment_id": "...",
+        "pet_id": "...",
+        "pet_name": "Buddy",
+        "pet_photo_url": "...",
+        "owner_name": "John Doe",
+        "owner_phone": "+919876543210",
+        "owner_email": "john@example.com",
+        "subscription_tier": "Eternal",
+        "assigned_date": "2024-01-01",
+        "last_check_in_date": "2024-01-12",
+        "next_check_in_date": "2024-01-20",
+        "check_in_frequency": "weekly",
+        "onboarding_status": "completed",
+        "care_plan_url": "...",
+        "status_indicator": "good",
+        "pending_action_items": 2
+      }
+    ],
+    "total_active": 35,
+    "capacity": 50,
+    "stats": {
+      "onboarding_pending": 2,
+      "check_ins_due": 5,
+      "action_items_pending": 8
+    }
+  }
+}
+
+
+________________
+
+
+When "Schedule Check-in" tapped:
+Opens scheduling dialog:
+      * Date & time picker
+      * Check-in type: Phone | Video | In-person
+      * Notes field
+      * "Schedule" button
+API: POST /care-managers/me/assignments/:id/schedule-check-in
+Request:
+{
+  "next_check_in_date": "2024-01-20T10:00:00Z",
+  "check_in_type": "phone",
+  "notes": "Discuss diet plan updates"
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Check-in scheduled",
+  "data": {
+    "check_in_id": "...",
+    "scheduled_for": "2024-01-20T10:00:00Z"
+  }
+}
+
+
+________________
+
+
+When conducting check-in:
+API: POST /care-managers/me/assignments/:id/interactions
+Request:
+{
+  "interaction_type": "phone_call",
+  "summary": "Discussed Buddy's recent behavior changes. Owner concerned about reduced appetite.",
+  "duration_minutes": 15,
+  "action_items": [
+    {
+      "item": "Schedule vet consultation",
+      "due_date": "2024-01-18",
+      "priority": "high"
+    },
+    {
+      "item": "Send diet recommendations",
+      "due_date": "2024-01-16"
+    }
+  ],
+  "next_check_in_recommended": "2024-01-27"
+}
+
+
+Response:
+{
+  "success": true,
+  "message": "Interaction logged successfully",
+  "data": {
+    "interaction_id": "...",
+    "action_items_created": 2
+  }
+}
+
+
+________________
+
+
+KEY NAVIGATION FLOWS SUMMARY
+New User Journey
+Login Screen
+  → OTP Verification
+  → Profile Setup
+  → Add Pet
+  → Home Screen
+
+
+Booking Journey
+Home Screen
+  → Services Catalog
+  → Service Detail
+  → Booking Screen (slots)
+  → Payment Screen
+  → Booking Confirmation
+  → [On service day] → Live Tracking
+  → Rate Service
+
+
+Subscription Journey
+Home/Services
+  → Subscriptions Screen
+  → Select Tier
+  → Payment
+  → Subscription Activated
+  → [Usage] → Quota tracking on Home
+
+
+Health Management
+Home
+  → Pet Profile
+  → Health Tab
+  → Add Vaccination/Medication
+  → Set Reminders
+  → [Reminder triggers] → Notification → Health Screen
+
+
+Caregiver Journey
+Login
+  → Dashboard (Assignments)
+  → Accept Assignment
+  → Navigate to Location
+  → Start Service
+  → Execute Service (checklist, photos)
+  → Complete Service
+  → Earnings Updated
+
+
+________________
+
+
+CRITICAL UX PATTERNS
+Loading States
+      * Shimmer placeholders for lists
+      * Skeleton screens for detail pages
+      * Progress indicators for actions
+      * Optimistic updates where safe
+Error Handling
+      * Inline errors for form validation
+      * Toast/SnackBar for minor errors
+      * Dialog for critical errors
+      * Retry buttons for network failures
+      * Offline mode indicators
+Empty States
+      * Illustration + message + CTA for all empty lists
+      * Examples:
+      * No pets: "Add your first pet"
+      * No bookings: "Book your first service"
+      * No subscriptions: "Subscribe for benefits"
+Confirmation

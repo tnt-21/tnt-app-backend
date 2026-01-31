@@ -54,4 +54,8 @@ router.put('/me/phone', rateLimitMiddleware(3, 60), validate(updatePhoneSchema),
 router.post('/me/email/request-update', rateLimitMiddleware(3, 60), userController.requestEmailUpdate);
 router.put('/me/email', rateLimitMiddleware(3, 60), validate(updateEmailSchema), userController.updateEmail);
 
+// ==================== REFERRALS ====================
+const referralController = require('../../controllers/referral.controller');
+router.get('/me/referral', referralController.getMyReferralInfo);
+
 module.exports = router;

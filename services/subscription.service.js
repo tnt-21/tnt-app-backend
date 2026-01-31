@@ -211,6 +211,148 @@ class SubscriptionService {
     return result.rows[0];
   }
 
+  async getTierConfigs(tierId) {
+    const query = `
+      SELECT 
+        stc.*,
+        sr.species_name,
+        lsr.life_stage_name,
+        sc.category_name
+      FROM subscription_tiers_config stc
+      JOIN species_ref sr ON stc.species_id = sr.species_id
+      JOIN life_stages_ref lsr ON stc.life_stage_id = lsr.life_stage_id
+      JOIN service_categories_ref sc ON stc.category_id = sc.category_id
+      WHERE stc.tier_id = $1
+      ORDER BY sr.species_name, lsr.life_stage_name, sc.category_name
+    `;
+    const result = await pool.query(query, [tierId]);
+    return result.rows;
+  }
+
+  // ==================== GLOBAL ADMIN ACTIONS ====================
+
+  async getAllSubscriptions(filters = {}) {
+    let query = `
+      SELECT 
+        s.subscription_id,
+        s.user_id,
+        u.full_name as customer_name,
+        u.phone as customer_phone,
+        s.pet_id,
+        p.name as pet_name,
+        p.photo_url as pet_photo,
+        sp.species_name,
+        ls.life_stage_name,
+        t.tier_name,
+        t.tier_code,
+        t.color_hex,
+        bc.cycle_name,
+        s.start_date,
+        s.end_date,
+        s.status,
+        s.current_period_end,
+        s.next_billing_date,
+        s.final_price,
+        s.created_at
+      FROM subscriptions s
+      JOIN users u ON s.user_id = u.user_id
+      JOIN pets p ON s.pet_id = p.pet_id
+      JOIN species_ref sp ON p.species_id = sp.species_id
+      JOIN life_stages_ref ls ON p.life_stage_id = ls.life_stage_id
+      JOIN subscription_tiers_ref t ON s.tier_id = t.tier_id
+      JOIN billing_cycles_ref bc ON s.billing_cycle_id = bc.billing_cycle_id
+      WHERE 1=1
+    `;
+
+    const params = [];
+    let paramIdx = 1;
+
+    if (filters.status) {
+      query += ` AND s.status = $${paramIdx++}`;
+      params.push(filters.status);
+    }
+
+    if (filters.tierId) {
+      query += ` AND s.tier_id = $${paramIdx++}`;
+      params.push(filters.tierId);
+    }
+
+    if (filters.search) {
+      query += ` AND (u.full_name ILIKE $${paramIdx} OR u.phone ILIKE $${paramIdx} OR p.name ILIKE $${paramIdx})`;
+      params.push(`%${filters.search}%`);
+      paramIdx++;
+    }
+
+    query += ` ORDER BY s.created_at DESC`;
+
+    const result = await pool.query(query, params);
+    return result.rows;
+  }
+
+  async getFairUsagePolicies(tierId = null) {
+    let query = `
+      SELECT fup.*, t.tier_name, sc.category_name, sc.icon_url
+      FROM fair_usage_policies fup
+      JOIN subscription_tiers_ref t ON fup.tier_id = t.tier_id
+      JOIN service_categories_ref sc ON fup.category_id = sc.category_id
+      WHERE 1=1
+    `;
+    const params = [];
+    if (tierId) {
+      query += ` AND fup.tier_id = $1`;
+      params.push(tierId);
+    }
+    query += ` ORDER BY t.display_order, sc.display_order`;
+    const result = await pool.query(query, params);
+    return result.rows;
+  }
+
+  async updateFairUsagePolicy(policyId, updates) {
+    const allowedFields = [
+      'max_usage_per_month', 'max_usage_per_week', 'max_usage_per_day',
+      'cooldown_period_days', 'cooldown_period_hours', 'abuse_threshold',
+      'abuse_action', 'is_active', 'description'
+    ];
+    
+    const fields = Object.keys(updates).filter(key => allowedFields.includes(key));
+    if (fields.length === 0) return null;
+
+    const setClause = fields.map((key, idx) => `${key} = $${idx + 2}`).join(', ');
+    const values = [policyId, ...fields.map(key => updates[key])];
+
+    const result = await pool.query(`
+      UPDATE fair_usage_policies
+      SET ${setClause}, updated_at = NOW()
+      WHERE policy_id = $1
+      RETURNING *
+    `, values);
+
+    return result.rows[0];
+  }
+
+  async createFairUsagePolicy(data) {
+    const { 
+      tier_id, category_id, max_usage_per_month, max_usage_per_week, 
+      max_usage_per_day, cooldown_period_days, cooldown_period_hours, 
+      abuse_threshold, abuse_action, description 
+    } = data;
+
+    const result = await pool.query(`
+      INSERT INTO fair_usage_policies (
+        tier_id, category_id, max_usage_per_month, max_usage_per_week, 
+        max_usage_per_day, cooldown_period_days, cooldown_period_hours, 
+        abuse_threshold, abuse_action, description
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING *
+    `, [
+      tier_id, category_id, max_usage_per_month, max_usage_per_week, 
+      max_usage_per_day, cooldown_period_days, cooldown_period_hours, 
+      abuse_threshold, abuse_action, description
+    ]);
+
+    return result.rows[0];
+  }
+
   // ==================== USER SUBSCRIPTIONS ====================
 
   async getUserSubscriptions(userId, status = null) {

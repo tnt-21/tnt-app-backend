@@ -165,10 +165,13 @@ class ConfigController {
   async getPromoCodes(req, res, next) {
     try {
       const filters = {
-        is_active: req.query.is_active === 'true',
         page: parseInt(req.query.page) || 1,
         limit: parseInt(req.query.limit) || 50
       };
+
+      if (req.query.is_active !== undefined) {
+        filters.is_active = req.query.is_active === 'true';
+      }
 
       const result = await promoService.getPromoCodes(filters);
       return ResponseUtil.success(res, result, 'Promo codes retrieved successfully');

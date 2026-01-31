@@ -362,10 +362,22 @@ class ConfigService {
     return result.rows[0];
   }
 
-  async upsertSetting(settingData, adminId) {
+  async upsertSetting(settingData, userId) {
     const {
       setting_key, setting_value, setting_type, category, description, is_public
     } = settingData;
+
+    // Resolve admin_id from user_id
+    const adminResult = await pool.query(
+      'SELECT admin_id FROM admin_users WHERE user_id = $1',
+      [userId]
+    );
+
+    if (adminResult.rows.length === 0) {
+      throw new AppError('Admin profile not found for this user', 403, 'ADMIN_PROFILE_REQUIRED');
+    }
+
+    const adminId = adminResult.rows[0].admin_id;
 
     const query = `
       INSERT INTO app_settings (
@@ -418,11 +430,23 @@ class ConfigService {
     return result.rows;
   }
 
-  async createAlert(alertData, adminId) {
+  async createAlert(alertData, userId) {
     const {
       alert_type, title, message, severity, display_location,
       target_audience, start_time, end_time
     } = alertData;
+
+    // Resolve admin_id from user_id
+    const adminResult = await pool.query(
+      'SELECT admin_id FROM admin_users WHERE user_id = $1',
+      [userId]
+    );
+
+    if (adminResult.rows.length === 0) {
+      throw new AppError('Admin profile not found for this user', 403, 'ADMIN_PROFILE_REQUIRED');
+    }
+
+    const adminId = adminResult.rows[0].admin_id;
 
     const query = `
       INSERT INTO system_alerts (

@@ -21,7 +21,11 @@ class AuditUtil {
         user_id, admin_id, action, entity_type, entity_id,
         old_value, new_value, changes_summary,
         ip_address, user_agent, severity
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ) VALUES (
+        $1, 
+        (SELECT admin_id FROM admin_users WHERE user_id = $2 OR admin_id = $2 LIMIT 1), 
+        $3, $4, $5, $6, $7, $8, $9, $10, $11
+      )
       RETURNING log_id
     `;
 

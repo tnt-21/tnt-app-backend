@@ -213,7 +213,7 @@ class AnalyticsService {
     const query = `
       SELECT 
         COUNT(*) as total_active,
-        tier_id,
+        s.tier_id,
         st.tier_name,
         COUNT(*) as count
       FROM subscriptions s
@@ -221,7 +221,7 @@ class AnalyticsService {
       WHERE status = 'active'
         AND start_date <= $1
         AND (end_date IS NULL OR end_date >= $1)
-      GROUP BY tier_id, st.tier_name
+      GROUP BY s.tier_id, st.tier_name
     `;
 
     const result = await pool.query(query, [date]);
@@ -336,13 +336,13 @@ class AnalyticsService {
         COUNT(CASE WHEN status = 'active' THEN 1 END) as active,
         COUNT(CASE WHEN status = 'paused' THEN 1 END) as paused,
         COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelled,
-        tier_id,
+        s.tier_id,
         st.tier_name,
         AVG(final_price) as avg_price
       FROM subscriptions s
       JOIN subscription_tiers_ref st ON s.tier_id = st.tier_id
-      GROUP BY tier_id, st.tier_name
-      ORDER BY tier_id
+      GROUP BY s.tier_id, st.tier_name
+      ORDER BY s.tier_id
     `;
 
     const result = await pool.query(query);

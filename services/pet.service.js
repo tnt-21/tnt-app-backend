@@ -1,5 +1,6 @@
 const { pool } = require("../config/database");
 const { AppError } = require("../utils/response.util");
+const attachmentService = require("./attachment.service");
 
 class PetService {
   // ==================== HELPER METHODS ====================
@@ -322,6 +323,11 @@ class PetService {
     `;
 
     const result = await pool.query(query, [photoUrl, petId]);
+    
+    if (result.rowCount > 0) {
+      await attachmentService.markPermanent(photoUrl);
+    }
+    
     return result.rows[0];
   }
 
@@ -487,6 +493,11 @@ class PetService {
     ];
 
     const result = await pool.query(query, values);
+    
+    if (result.rowCount > 0 && document_urls && document_urls.length > 0) {
+      await attachmentService.markPermanent(document_urls);
+    }
+    
     return result.rows[0];
   }
 
@@ -617,6 +628,11 @@ class PetService {
     ];
 
     const result = await pool.query(query, values);
+    
+    if (result.rowCount > 0 && certificate_url) {
+      await attachmentService.markPermanent(certificate_url);
+    }
+    
     return result.rows[0];
   }
 
@@ -670,6 +686,10 @@ class PetService {
 
     if (result.rows.length === 0) {
       throw new AppError("Vaccination not found", 404, "VACCINATION_NOT_FOUND");
+    }
+
+    if (updateData.certificate_url) {
+      await attachmentService.markPermanent(updateData.certificate_url);
     }
 
     return result.rows[0];
@@ -927,6 +947,11 @@ class PetService {
     ];
 
     const result = await pool.query(query, values);
+    
+    if (result.rowCount > 0 && documents_urls && documents_urls.length > 0) {
+      await attachmentService.markPermanent(documents_urls);
+    }
+    
     return result.rows[0];
   }
 
@@ -986,6 +1011,10 @@ class PetService {
 
     if (result.rows.length === 0) {
       throw new AppError("Insurance not found", 404, "INSURANCE_NOT_FOUND");
+    }
+
+    if (updateData.documents_urls && updateData.documents_urls.length > 0) {
+      await attachmentService.markPermanent(updateData.documents_urls);
     }
 
     return result.rows[0];

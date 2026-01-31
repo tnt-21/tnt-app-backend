@@ -7,6 +7,7 @@ const { pool } = require('../config/database');
 const { AppError } = require('../utils/response.util');
 const { v4: uuidv4 } = require('uuid');
 const paymentService = require('./payment.service');
+const attachmentService = require('./attachment.service');
 
 class ServiceService {
   // ==================== SERVICE CATALOG ====================
@@ -1033,6 +1034,217 @@ class ServiceService {
 
     const result = await pool.query(query);
     return result.rows;
+  }
+
+  // ==================== ADMIN: SERVICE MANAGEMENT ====================
+
+  async createService(data) {
+    const {
+      service_name,
+      category_id,
+      description,
+      detailed_description,
+      base_price,
+      duration_minutes,
+      is_doorstep = true,
+      requires_equipment = false,
+      equipment_list = [],
+      preparation_instructions,
+      terms_conditions,
+      icon_url,
+      banner_image_url,
+      video_url,
+      is_active = true
+    } = data;
+
+    const query = `
+      INSERT INTO service_catalog (
+        service_name, category_id, description, detailed_description,
+        base_price, duration_minutes, is_doorstep, requires_equipment,
+        equipment_list, preparation_instructions, terms_conditions,
+        icon_url, banner_image_url, video_url, is_active
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, [
+      service_name, category_id, description, detailed_description,
+      base_price, duration_minutes, is_doorstep, requires_equipment,
+      JSON.stringify(equipment_list), preparation_instructions, terms_conditions,
+      icon_url, banner_image_url, video_url, is_active
+    ]);
+
+    if (result.rowCount > 0) {
+      if (icon_url) await attachmentService.markPermanent(icon_url);
+      if (banner_image_url) await attachmentService.markPermanent(banner_image_url);
+      if (video_url) await attachmentService.markPermanent(video_url);
+    }
+
+    return result.rows[0];
+  }
+
+  async updateService(serviceId, data) {
+    const allowedFields = [
+      'service_name', 'category_id', 'description', 'detailed_description',
+      'base_price', 'duration_minutes', 'is_doorstep', 'requires_equipment',
+      'equipment_list', 'preparation_instructions', 'terms_conditions',
+      'icon_url', 'banner_image_url', 'video_url', 'is_active'
+    ];
+
+    const updates = [];
+    const params = [serviceId];
+    let paramCount = 2;
+
+    allowedFields.forEach(field => {
+      if (data[field] !== undefined) {
+        updates.push(`${field} = $${paramCount}`);
+        params.push(field === 'equipment_list' ? JSON.stringify(data[field]) : data[field]);
+        paramCount++;
+      }
+    });
+
+    if (updates.length === 0) return this.getServiceById(serviceId);
+
+    const query = `
+      UPDATE service_catalog 
+      SET ${updates.join(', ')}, updated_at = NOW()
+      WHERE service_id = $1
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, params);
+    
+    if (result.rows.length === 0) {
+      throw new AppError('Service not found', 404, 'SERVICE_NOT_FOUND');
+    }
+
+    if (data.icon_url) await attachmentService.markPermanent(data.icon_url);
+    if (data.banner_image_url) await attachmentService.markPermanent(data.banner_image_url);
+    if (data.video_url) await attachmentService.markPermanent(data.video_url);
+
+    return result.rows[0];
+  }
+
+  async deleteService(serviceId) {
+    // Check if service has bookings
+    const bookingCheck = await pool.query(
+      'SELECT COUNT(*) FROM bookings WHERE service_id = $1',
+      [serviceId]
+    );
+
+    if (parseInt(bookingCheck.rows[0].count) > 0) {
+      throw new AppError('Cannot delete service with existing bookings', 400, 'SERVICE_HAS_BOOKINGS');
+    }
+
+    const result = await pool.query('DELETE FROM service_catalog WHERE service_id = $1', [serviceId]);
+    
+    if (result.rowCount === 0) {
+      throw new AppError('Service not found', 404, 'SERVICE_NOT_FOUND');
+    }
+
+    return { success: true };
+  }
+
+  // ==================== ADMIN: ELIGIBILITY CONFIG ====================
+
+  async getServiceEligibilityRules(serviceId) {
+    const query = `
+      SELECT 
+        sec.*,
+        sr.species_name,
+        lsr.life_stage_name,
+        str.tier_name
+      FROM service_eligibility_config sec
+      JOIN species_ref sr ON sec.species_id = sr.species_id
+      JOIN life_stages_ref lsr ON sec.life_stage_id = lsr.life_stage_id
+      LEFT JOIN subscription_tiers_ref str ON sec.tier_id = str.tier_id
+      WHERE sec.service_id = $1
+      ORDER BY sr.species_name, lsr.life_stage_name
+    `;
+    const result = await pool.query(query, [serviceId]);
+    return result.rows;
+  }
+
+  async updateServiceEligibilityRules(serviceId, rules) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Simple approach: Delete existing and insert new
+      await client.query('DELETE FROM service_eligibility_config WHERE service_id = $1', [serviceId]);
+
+      if (rules && rules.length > 0) {
+        for (const rule of rules) {
+          const insertQuery = `
+            INSERT INTO service_eligibility_config (
+              service_id, species_id, life_stage_id, tier_id,
+              is_included, price_override, discount_percentage,
+              prerequisites, restrictions
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `;
+          await client.query(insertQuery, [
+            serviceId, rule.species_id, rule.life_stage_id, rule.tier_id || null,
+            rule.is_included ?? false, rule.price_override || null, rule.discount_percentage || 0,
+            rule.prerequisites || null, rule.restrictions || null
+          ]);
+        }
+      }
+
+      await client.query('COMMIT');
+      return this.getServiceEligibilityRules(serviceId);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  // ==================== ADMIN: AVAILABILITY CONFIG ====================
+
+  async getServiceAvailability(serviceId) {
+    const query = `
+      SELECT * FROM service_availability 
+      WHERE service_id = $1 
+      ORDER BY day_of_week
+    `;
+    const result = await pool.query(query, [serviceId]);
+    return result.rows;
+  }
+
+  async updateServiceAvailability(serviceId, availability) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Delete existing
+      await client.query('DELETE FROM service_availability WHERE service_id = $1', [serviceId]);
+
+      if (availability && availability.length > 0) {
+        for (const avail of availability) {
+          const insertQuery = `
+            INSERT INTO service_availability (
+              service_id, day_of_week, start_time, end_time,
+              slot_duration_minutes, max_bookings_per_slot, buffer_time_minutes,
+              is_active
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          `;
+          await client.query(insertQuery, [
+            serviceId, avail.day_of_week, avail.start_time, avail.end_time,
+            avail.slot_duration_minutes || 60, avail.max_bookings_per_slot || 5, 
+            avail.buffer_time_minutes || 15, avail.is_active ?? true
+          ]);
+        }
+      }
+
+      await client.query('COMMIT');
+      return this.getServiceAvailability(serviceId);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 

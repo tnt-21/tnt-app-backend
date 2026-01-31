@@ -3,3 +3,6 @@ things for temporary testing
 1. im returning the value of generated otp in send-otp route
 2. for now access token limit = 7d, later change to 15m, call refresh-token from client side later
 3. in download invoice route - For now, returned JSON. In production, generate PDF using library like PDFKit or puppeteer
+4. in index.js 
+        change "server = app.listen(PORT, '0.0.0.0', () => {" line to "server = app.listen(PORT, () => {"
+5. in .env update: ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001

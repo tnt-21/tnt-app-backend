@@ -804,9 +804,8 @@ const createBookingSchema = Joi.object({
     "any.required": "Service ID is required",
   }),
 
-  booking_date: Joi.date().min("now").required().messages({
+  booking_date: Joi.date().required().messages({
     "date.base": "Invalid booking date",
-    "date.min": "Booking date cannot be in the past",
     "any.required": "Booking date is required",
   }),
 
@@ -825,7 +824,7 @@ const createBookingSchema = Joi.object({
     "any.required": "Location type is required",
   }),
 
-  address_id: Joi.string().uuid().optional().messages({
+  address_id: Joi.string().uuid().allow(null).optional().messages({
     "string.guid": "Invalid address ID format",
   }),
 
