@@ -26,7 +26,7 @@ const BUCKET_NAME = process.env.AWS_S3_BUCKET || 'tnt-app-assets';
 const storage = multerS3({
   s3: s3,
   bucket: BUCKET_NAME,
-  acl: 'public-read', // Make files publicly readable
+  // acl: 'public-read', // Deprecated: Use Bucket Policy for public access
   contentType: multerS3.AUTO_CONTENT_TYPE,
   metadata: (req, file, cb) => {
     cb(null, { fieldName: file.fieldname });

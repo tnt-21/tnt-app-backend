@@ -1120,6 +1120,7 @@ class ServiceService {
   }
 
   async updateService(serviceId, data) {
+    console.log(`Updating service ${serviceId} with data:`, JSON.stringify(data, null, 2));
     const allowedFields = [
       'service_name', 'category_id', 'description', 'detailed_description',
       'base_price', 'duration_minutes', 'is_doorstep', 'requires_equipment',

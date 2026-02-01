@@ -21,6 +21,8 @@ class UploadController {
         return ResponseUtil.error(res, 'No file uploaded', 400);
       }
 
+      console.log('Full Multer File Object:', JSON.stringify(req.file, null, 2));
+
       // Record upload in database for tracking/cleanup
       const fileData = {
         s3_key: req.file.key,
@@ -29,6 +31,8 @@ class UploadController {
         mimetype: req.file.mimetype,
       };
       
+      console.log('S3 Upload Success:', fileData);
+
       attachmentService.recordUpload(fileData).catch(err => {
         console.error('Failed to record upload in DB:', err);
       });
