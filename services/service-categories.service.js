@@ -1,4 +1,5 @@
 const { pool } = require('../config/database');
+const attachmentService = require('./attachment.service');
 
 class ServiceCategoriesService {
   /**
@@ -67,6 +68,10 @@ class ServiceCategoriesService {
       ]
     );
 
+    if (icon_url) {
+      await attachmentService.markPermanent(icon_url);
+    }
+
     return result.rows[0];
   }
 
@@ -120,6 +125,16 @@ class ServiceCategoriesService {
       ]
     );
 
+    const currentCategory = await this.getById(id);
+    if (icon_url && icon_url !== currentCategory.icon_url) {
+      await attachmentService.markPermanent(icon_url);
+      if (currentCategory.icon_url) {
+        attachmentService.unmarkPermanent(currentCategory.icon_url).catch(err =>
+          console.error("Failed to unmark old category icon:", err)
+        );
+      }
+    }
+
     return result.rows[0];
   }
 
@@ -139,7 +154,16 @@ class ServiceCategoriesService {
       throw new Error('Cannot delete category as it is associated with one or more services');
     }
 
+    const category = await this.getById(id);
+
     await pool.query('DELETE FROM service_categories_ref WHERE category_id = $1', [id]);
+
+    if (category.icon_url) {
+      attachmentService.unmarkPermanent(category.icon_url).catch(err =>
+        console.error("Failed to unmark service category icon:", err)
+      );
+    }
+    
     return { success: true, message: 'Service category deleted successfully' };
   }
 

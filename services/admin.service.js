@@ -631,10 +631,29 @@ class AdminService {
     });
 
     if (updates.length > 0) {
+      // Get current photo if updating photo
+      let oldPhotoUrl = null;
+      if (data.photo_url !== undefined) {
+        const currentManager = await this.getCareManagerById(id);
+        oldPhotoUrl = currentManager.photo_url;
+      }
+
       updates.push(`updated_at = NOW()`);
       values.push(id);
       const query = `UPDATE care_managers SET ${updates.join(', ')} WHERE care_manager_id = $${paramCount} RETURNING *`;
       const result = await pool.query(query, values);
+      
+      // Handle photo changes
+      if (data.photo_url) {
+        await attachmentService.markPermanent(data.photo_url);
+      }
+      
+      if (oldPhotoUrl && oldPhotoUrl !== data.photo_url) {
+        attachmentService.unmarkPermanent(oldPhotoUrl).catch(err => 
+          console.error("Failed to unmark old care manager photo:", err)
+        );
+      }
+      
       return result.rows[0];
     }
     return null;
@@ -1692,6 +1711,11 @@ class AdminService {
     ];
 
     const result = await pool.query(query, values);
+
+    if (banner_image_url) {
+      await attachmentService.markPermanent(banner_image_url);
+    }
+
     return result.rows[0];
   }
 
@@ -1730,6 +1754,13 @@ class AdminService {
     updates.push(`updated_at = NOW()`);
     values.push(eventId);
 
+    // Get old banner if updating banner
+    let oldBannerUrl = null;
+    if (eventData.banner_image_url !== undefined) {
+      const oldRes = await pool.query("SELECT banner_image_url FROM community_events WHERE event_id = $1", [eventId]);
+      oldBannerUrl = oldRes.rows[0]?.banner_image_url;
+    }
+
     const query = `
       UPDATE community_events 
       SET ${updates.join(', ')} 
@@ -1741,6 +1772,17 @@ class AdminService {
     if (result.rows.length === 0) {
       throw new AppError('Event not found', 404, 'EVENT_NOT_FOUND');
     }
+
+    if (eventData.banner_image_url) {
+      await attachmentService.markPermanent(eventData.banner_image_url);
+    }
+
+    if (oldBannerUrl && oldBannerUrl !== eventData.banner_image_url) {
+      attachmentService.unmarkPermanent(oldBannerUrl).catch(err => 
+        console.error("Failed to unmark old event banner:", err)
+      );
+    }
+
     return result.rows[0];
   }
 

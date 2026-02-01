@@ -37,15 +37,34 @@ class AttachmentService {
   }
 
   /**
+   * Unmark a file as permanent so it can be cleaned up if it becomes an orphan
+   */
+  async unmarkPermanent(urls) {
+    if (!urls) return;
+
+    const urlList = Array.isArray(urls) ? urls : [urls];
+    if (urlList.length === 0) return;
+
+    const query = `
+      UPDATE attachments
+      SET is_permanent = FALSE, updated_at = NOW()
+      WHERE url = ANY($1)
+    `;
+
+    await pool.query(query, [urlList]);
+  }
+
+  /**
    * Cleanup orphan files that are not marked as permanent and are older than 24h
    */
   async cleanupOrphans() {
-    // Find files that are NOT permanent and older than 24 hours
+    // Find files that are NOT permanent and older than Configured hours (default 24h)
+    const hours = process.env.CLEANUP_AGE_HOURS || 24;
     const query = `
       SELECT attachment_id, s3_key, url 
       FROM attachments 
       WHERE is_permanent = FALSE 
-      AND created_at < NOW() - INTERVAL '24 hours'
+      AND created_at < NOW() - INTERVAL '${hours} hours'
     `;
     
     const result = await pool.query(query);

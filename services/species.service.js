@@ -1,5 +1,6 @@
 const { pool } = require('../config/database');
 const { v4: uuidv4 } = require('uuid');
+const attachmentService = require('./attachment.service');
 
 class SpeciesService {
   /**
@@ -53,6 +54,10 @@ class SpeciesService {
       [species_code, species_name, icon_url || null, is_active]
     );
 
+    if (icon_url) {
+      await attachmentService.markPermanent(icon_url);
+    }
+
     return result.rows[0];
   }
 
@@ -63,7 +68,7 @@ class SpeciesService {
     const { species_code, species_name, icon_url, is_active } = data;
 
     // Check if species exists
-    await this.getById(speciesId);
+    const currentSpecies = await this.getById(speciesId);
 
     // Check if new species code conflicts with existing
     if (species_code) {
@@ -89,6 +94,20 @@ class SpeciesService {
       [species_code, species_name, icon_url, is_active, speciesId]
     );
 
+    if (result.rows.length === 0) {
+      throw new Error('Species not found');
+    }
+
+    // Handle icon update
+    if (icon_url && icon_url !== currentSpecies.icon_url) {
+       await attachmentService.markPermanent(icon_url);
+       if (currentSpecies.icon_url) {
+         attachmentService.unmarkPermanent(currentSpecies.icon_url).catch(err =>
+           console.error("Failed to unmark old species icon:", err)
+         );
+       }
+    }
+
     return result.rows[0];
   }
 
@@ -97,7 +116,7 @@ class SpeciesService {
    */
   async delete(speciesId) {
     // Check if species exists
-    await this.getById(speciesId);
+    const species = await this.getById(speciesId);
 
     // Check if species is being used
     const lifeStages = await pool.query(
@@ -113,6 +132,12 @@ class SpeciesService {
       'DELETE FROM species_ref WHERE species_id = $1',
       [speciesId]
     );
+
+    if (species.icon_url) {
+      attachmentService.unmarkPermanent(species.icon_url).catch(err =>
+        console.error("Failed to unmark distinct species icon:", err)
+      );
+    }
 
     return { success: true, message: 'Species deleted successfully' };
   }

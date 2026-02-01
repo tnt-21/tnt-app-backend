@@ -1091,6 +1091,9 @@ class ServiceService {
       'icon_url', 'banner_image_url', 'video_url', 'is_active'
     ];
 
+    // Get current service state
+    const currentService = await this.getServiceById(serviceId);
+
     const updates = [];
     const params = [serviceId];
     let paramCount = 2;
@@ -1103,7 +1106,7 @@ class ServiceService {
       }
     });
 
-    if (updates.length === 0) return this.getServiceById(serviceId);
+    if (updates.length === 0) return currentService;
 
     const query = `
       UPDATE service_catalog 
@@ -1118,14 +1121,28 @@ class ServiceService {
       throw new AppError('Service not found', 404, 'SERVICE_NOT_FOUND');
     }
 
-    if (data.icon_url) await attachmentService.markPermanent(data.icon_url);
-    if (data.banner_image_url) await attachmentService.markPermanent(data.banner_image_url);
-    if (data.video_url) await attachmentService.markPermanent(data.video_url);
+    // Handle media updates (mark new as permanent, unmark old)
+    const mediaFields = ['icon_url', 'banner_image_url', 'video_url'];
+    
+    for (const field of mediaFields) {
+      if (data[field] && data[field] !== currentService[field]) {
+        await attachmentService.markPermanent(data[field]);
+        
+        if (currentService[field]) {
+          attachmentService.unmarkPermanent(currentService[field]).catch(err => 
+            console.error(`Failed to unmark old service ${field}:`, err)
+          );
+        }
+      }
+    }
 
     return result.rows[0];
   }
 
   async deleteService(serviceId) {
+    // Check if distinct service before delete
+    const service = await this.getServiceById(serviceId);
+
     // Check if service has bookings
     const bookingCheck = await pool.query(
       'SELECT COUNT(*) FROM bookings WHERE service_id = $1',
@@ -1141,6 +1158,16 @@ class ServiceService {
     if (result.rowCount === 0) {
       throw new AppError('Service not found', 404, 'SERVICE_NOT_FOUND');
     }
+
+    // Unmark all associated media
+    const mediaFields = ['icon_url', 'banner_image_url', 'video_url'];
+    mediaFields.forEach(field => {
+      if (service[field]) {
+        attachmentService.unmarkPermanent(service[field]).catch(err => 
+          console.error(`Failed to unmark service ${field} on delete:`, err)
+        );
+      }
+    });
 
     return { success: true };
   }

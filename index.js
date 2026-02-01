@@ -34,6 +34,8 @@ const auditRoutes = require('./routes/v1/audit.routes'); // Import audit routes
 
 // Import cron jobs
 const { initPetLifeStageJob } = require('./cron/pet.cron');
+// Import S3 Cleanup Job
+const { initCleanupJob } = require('./cron/cleanup.cron');
 // Import keep alive cron job for render
 const { initKeepAliveJob } = require('./cron/keep_alive.cron');
 
@@ -165,6 +167,7 @@ async function startServer() {
     
     // Initialize Cron Jobs
     initPetLifeStageJob();
+    initCleanupJob();
     initKeepAliveJob();
     
     // server = app.listen(PORT, () => {

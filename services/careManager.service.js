@@ -5,6 +5,7 @@
 
 const { pool } = require("../config/database");
 const { AppError } = require("../utils/response.util");
+const attachmentService = require("./attachment.service");
 
 class CareManagerService {
   // ==================== PROFILE ====================
@@ -84,7 +85,22 @@ class CareManagerService {
       RETURNING photo_url
     `;
 
+    // Get current photo
+    const currentManager = await this.getProfileById(careManagerId);
+    const oldPhotoUrl = currentManager.photo_url;
+
     const result = await pool.query(query, [photoUrl, careManagerId]);
+
+    if (photoUrl) {
+      await attachmentService.markPermanent(photoUrl);
+    }
+
+    if (oldPhotoUrl && oldPhotoUrl !== photoUrl) {
+      attachmentService.unmarkPermanent(oldPhotoUrl).catch(err => 
+        console.error("Failed to unmark old care manager photo:", err)
+      );
+    }
+
     return result.rows[0];
   }
 
@@ -244,6 +260,10 @@ class CareManagerService {
         ) VALUES ($1, 'onboarding', NOW(), $2, $3)`,
         [assignmentId, notes || "Onboarding call completed", careManagerId]
       );
+
+      if (carePlanUrl) {
+        await attachmentService.markPermanent(carePlanUrl);
+      }
 
       await client.query("COMMIT");
       return result.rows[0];

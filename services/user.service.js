@@ -86,15 +86,50 @@ class UserService {
   }
 
   async updateProfilePhoto(userId, photoUrl) {
-    const query = `
-      UPDATE users 
-      SET profile_photo_url = $1, updated_at = NOW()
-      WHERE user_id = $2
-      RETURNING profile_photo_url
-    `;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    const result = await pool.query(query, [photoUrl, userId]);
-    return result.rows[0];
+      // Get current photo to unmark later
+      const userResult = await client.query(
+        "SELECT profile_photo_url FROM users WHERE user_id = $1",
+        [userId]
+      );
+      const oldPhotoUrl = userResult.rows[0]?.profile_photo_url;
+
+      const query = `
+        UPDATE users 
+        SET profile_photo_url = $1, updated_at = NOW()
+        WHERE user_id = $2
+        RETURNING profile_photo_url
+      `;
+
+      const result = await client.query(query, [photoUrl, userId]);
+
+      await client.query("COMMIT");
+
+      // Handle profile photo persistence
+      if (photoUrl) {
+          const attachmentService = require("./attachment.service");
+          await attachmentService.markPermanent(photoUrl);
+      }
+
+      // Unmark old photo after successful update
+      if (oldPhotoUrl && oldPhotoUrl !== photoUrl) {
+        // Run in background, don't await
+        const attachmentService = require("./attachment.service");
+        attachmentService.unmarkPermanent(oldPhotoUrl).catch(err => 
+          console.error("Failed to unmark old profile photo:", err)
+        );
+      }
+
+      return result.rows[0];
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async deleteAccount(userId) {
@@ -424,6 +459,7 @@ class UserService {
       `;
       result = await pool.query(insertQuery, [userId]);
     }
+
 
     return result.rows[0];
   }

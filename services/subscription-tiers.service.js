@@ -1,4 +1,5 @@
 const { pool } = require('../config/database');
+const attachmentService = require('./attachment.service');
 
 class SubscriptionTiersService {
   /**
@@ -73,6 +74,10 @@ class SubscriptionTiersService {
       ]
     );
 
+    if (icon_url) {
+      await attachmentService.markPermanent(icon_url);
+    }
+
     return result.rows[0];
   }
 
@@ -93,7 +98,7 @@ class SubscriptionTiersService {
     } = data;
 
     // Check if exists
-    await this.getById(id);
+    const currentTier = await this.getById(id);
 
     // Check code conflict
     if (tier_code) {
@@ -135,6 +140,15 @@ class SubscriptionTiersService {
       ]
     );
 
+    if (icon_url && icon_url !== currentTier.icon_url) {
+      await attachmentService.markPermanent(icon_url);
+      if (currentTier.icon_url) {
+        attachmentService.unmarkPermanent(currentTier.icon_url).catch(err =>
+          console.error("Failed to unmark old tier icon:", err)
+        );
+      }
+    }
+
     return result.rows[0];
   }
 
@@ -142,7 +156,7 @@ class SubscriptionTiersService {
    * Delete tier
    */
   async delete(id) {
-    await this.getById(id);
+    const tier = await this.getById(id);
 
     // Check if in use (subscriptions table)
     const subscriptions = await pool.query(
@@ -155,6 +169,13 @@ class SubscriptionTiersService {
     }
 
     await pool.query('DELETE FROM subscription_tiers_ref WHERE tier_id = $1', [id]);
+    
+    if (tier.icon_url) {
+      attachmentService.unmarkPermanent(tier.icon_url).catch(err =>
+        console.error("Failed to unmark distinct tier icon:", err)
+      );
+    }
+    
     return { success: true, message: 'Subscription tier deleted successfully' };
   }
 

@@ -315,20 +315,42 @@ class PetService {
   async updatePetPhoto(petId, userId, photoUrl) {
     await this.verifyPetOwnership(petId, userId);
 
-    const query = `
-      UPDATE pets 
-      SET photo_url = $1, updated_at = NOW()
-      WHERE pet_id = $2
-      RETURNING photo_url
-    `;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
 
-    const result = await pool.query(query, [photoUrl, petId]);
-    
-    if (result.rowCount > 0) {
-      await attachmentService.markPermanent(photoUrl);
+      // Get old photo
+      const petQuery = "SELECT photo_url FROM pets WHERE pet_id = $1";
+      const petResult = await client.query(petQuery, [petId]);
+      const oldPhotoUrl = petResult.rows[0]?.photo_url;
+
+      const query = `
+        UPDATE pets 
+        SET photo_url = $1, updated_at = NOW()
+        WHERE pet_id = $2
+        RETURNING photo_url
+      `;
+
+      const result = await client.query(query, [photoUrl, petId]);
+      
+      if (result.rowCount > 0) {
+        // Mark old photo for deletion
+        if (oldPhotoUrl && oldPhotoUrl !== photoUrl) {
+          attachmentService.unmarkPermanent(oldPhotoUrl).catch(err => 
+            console.error("Failed to unmark old pet photo:", err)
+          );
+        }
+        await attachmentService.markPermanent(photoUrl);
+      }
+
+      await client.query("COMMIT");
+      return result.rows[0];
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
     }
-    
-    return result.rows[0];
   }
 
   async deletePet(petId, userId) {
@@ -503,7 +525,7 @@ class PetService {
 
   async updateHealthRecord(recordId, petId, userId, updateData) {
     await this.verifyPetOwnership(petId, userId);
-    await this.getHealthRecordById(recordId, petId, userId);
+    const oldRecord = await this.getHealthRecordById(recordId, petId, userId);
 
     const updates = [];
     const values = [];
@@ -552,14 +574,43 @@ class PetService {
     `;
 
     const result = await pool.query(query, values);
+
+    if (result.rowCount > 0 && updateData.document_urls !== undefined) {
+      const oldDocumentUrls = oldRecord.document_urls ? JSON.parse(oldRecord.document_urls) : [];
+      const newDocumentUrls = updateData.document_urls || [];
+
+      // Unmark old documents that are no longer present
+      oldDocumentUrls.forEach(url => {
+        if (!newDocumentUrls.includes(url)) {
+          attachmentService.unmarkPermanent(url).catch(err =>
+            console.error("Failed to unmark old health record document:", err)
+          );
+        }
+      });
+      // Mark new documents as permanent
+      if (newDocumentUrls.length > 0) {
+        await attachmentService.markPermanent(newDocumentUrls);
+      }
+    }
+
     return result.rows[0];
   }
 
   async deleteHealthRecord(recordId, petId, userId) {
     await this.verifyPetOwnership(petId, userId);
-    await this.getHealthRecordById(recordId, petId, userId);
+    const recordToDelete = await this.getHealthRecordById(recordId, petId, userId);
 
     await pool.query("DELETE FROM health_records WHERE record_id = $1", [recordId]);
+
+    if (recordToDelete.document_urls) {
+      const documentUrls = JSON.parse(recordToDelete.document_urls);
+      if (documentUrls.length > 0) {
+        attachmentService.unmarkPermanent(documentUrls).catch(err =>
+          console.error("Failed to unmark health record documents on deletion:", err)
+        );
+      }
+    }
+
     return true;
   }
 
@@ -639,6 +690,13 @@ class PetService {
   async updateVaccination(vaccinationId, petId, userId, updateData) {
     await this.verifyPetOwnership(petId, userId);
 
+    // Get current certificate_url to unmark if it changes
+    const currentVaccination = await pool.query(
+      "SELECT certificate_url FROM vaccinations WHERE vaccination_id = $1 AND pet_id = $2",
+      [vaccinationId, petId]
+    );
+    const oldCertificateUrl = currentVaccination.rows[0]?.certificate_url;
+
     const updates = [];
     const values = [];
     let paramCount = 1;
@@ -692,11 +750,22 @@ class PetService {
       await attachmentService.markPermanent(updateData.certificate_url);
     }
 
+    if (oldCertificateUrl && oldCertificateUrl !== updateData.certificate_url) {
+        attachmentService.unmarkPermanent(oldCertificateUrl).catch(err =>
+            console.error("Failed to unmark old vaccination certificate:", err)
+        );
+    }
+
     return result.rows[0];
   }
 
   async deleteVaccination(vaccinationId, petId, userId) {
     await this.verifyPetOwnership(petId, userId);
+
+    // Get certificate before delete
+    const query = "SELECT certificate_url FROM vaccinations WHERE vaccination_id = $1 AND pet_id = $2";
+    const res = await pool.query(query, [vaccinationId, petId]);
+    const certificateUrl = res.rows[0]?.certificate_url;
 
     const result = await pool.query(
       "DELETE FROM vaccinations WHERE vaccination_id = $1 AND pet_id = $2 RETURNING vaccination_id",
@@ -705,6 +774,12 @@ class PetService {
 
     if (result.rows.length === 0) {
       throw new AppError("Vaccination not found", 404, "VACCINATION_NOT_FOUND");
+    }
+
+    if (certificateUrl) {
+      attachmentService.unmarkPermanent(certificateUrl).catch(err => 
+        console.error("Failed to unmark vaccination certificate detected in deleteVaccination:", err)
+      );
     }
 
     return true;

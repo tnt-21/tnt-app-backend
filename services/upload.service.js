@@ -1,203 +1,82 @@
 // ============================================
 // FILE: services/upload.service.js
-// Cloudinary Upload Service
+// S3 Upload Service (Consolidated)
 // ============================================
 
-const cloudinary = require('cloudinary').v2;
-const stream = require('stream');
-const path = require('path');
-const uploadConfig = require('../config/upload.config');
+const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { s3 } = require('../middlewares/upload.middleware'); // Re-use S3 instance from middleware
 
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
+const BUCKET_NAME = process.env.AWS_S3_BUCKET || 'tnt-app-assets';
 
 class UploadService {
-  constructor() {
-    // Folders in Cloudinary
-    this.folders = {
-      profile: 'tails_and_tales/profile-photos',
-      pets: 'tails_and_tales/pet-photos',
-      tickets: 'tails_and_tales/ticket-attachments'
-    };
-  }
-
   /**
-   * Helper to upload a buffer to Cloudinary
-   * @param {Buffer} buffer - File buffer
-   * @param {Object} options - Cloudinary upload options
-   * @returns {Promise<string>} - The secure URL of the uploaded file
+   * Return the S3 URL of the uploaded file.
+   * Since we use multer-s3 middleware, the file is already uploaded by the time
+   * the controller calls this. We just need to extract the location.
    */
-  async uploadToCloudinary(buffer, options) {
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
-        options,
-        (error, result) => {
-          if (error) {
-            console.error('Cloudinary upload error:', error);
-            return reject(new Error('Cloud upload failed'));
-          }
-          resolve(result.secure_url);
-        }
-      );
-
-      // Create a readable stream from the buffer and pipe it to Cloudinary
-      const bufferStream = new stream.PassThrough();
-      bufferStream.end(buffer);
-      bufferStream.pipe(uploadStream);
-    });
-  }
-
-  /**
-   * Extract public ID from Cloudinary URL for deletion
-   * Assumes URL format: .../folder/filename.ext
-   */
-  getPublicIdFromUrl(url) {
-    try {
-      const splitUrl = url.split('/');
-      // Get the last two parts: folder/filename.ext
-      const filenameWithExt = splitUrl.pop();
-      const folder = splitUrl.pop();
-      // Remove extension
-      const publicId = `${folder}/${filenameWithExt.split('.')[0]}`;
-      // Note: This is a simplistic extraction. 
-      // Ideally, we should store the public_id in the DB alongside the URL.
-      // But for this structure, 'folder/filename' usually works.
-      // However, since we defined specific folders in the constructor,
-      // and Cloudinary URLs include the full path, we need to be careful.
-      
-      // Better approach: Match the known folder names
-      const match = url.match(/tails_and_tales\/[^/]+\/[^.]+/);
-      return match ? match[0] : null;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  // ==================== PROFILE PHOTOS ====================
-
   async uploadProfilePhoto(file, userId) {
-    try {
-      // Cloudinary handles resizing via transformation options if needed,
-      // or we can just upload and use dynamic URLs for resizing.
-      // Here we resize on upload to save storage/bandwidth.
-      const options = {
-        folder: this.folders.profile,
-        public_id: `user-${userId}-${Date.now()}`,
-        resource_type: 'image',
-        transformation: [
-          { 
-            width: uploadConfig.imageSize.width, 
-            height: uploadConfig.imageSize.height, 
-            crop: 'fill', 
-            gravity: 'face' 
-          }, 
-          { quality: 'auto', fetch_format: 'auto' } 
-        ]
-      };
-
-      return await this.uploadToCloudinary(file.buffer, options);
-    } catch (error) {
-      throw new Error('Failed to upload profile photo');
+    if (!file || !file.location) {
+      throw new Error('File upload failed');
     }
+    return file.location;
   }
-
-  async deleteProfilePhoto(photoUrl) {
-    try {
-      const publicId = this.getPublicIdFromUrl(photoUrl);
-      if (publicId) {
-        await cloudinary.uploader.destroy(publicId);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error deleting profile photo:', error);
-      return false;
-    }
-  }
-
-  // ==================== PET PHOTOS ====================
 
   async uploadPetPhoto(file, petId) {
-    try {
-      const options = {
-        folder: this.folders.pets,
-        public_id: `pet-${petId}-${Date.now()}`,
-        resource_type: 'image',
-        transformation: [
-          { 
-            width: uploadConfig.petImageSize.width, 
-            height: uploadConfig.petImageSize.height, 
-            crop: 'fill' 
-          },
-          { quality: 'auto', fetch_format: 'auto' }
-        ]
-      };
-
-      return await this.uploadToCloudinary(file.buffer, options);
-    } catch (error) {
-      throw new Error('Failed to upload pet photo');
+    if (!file || !file.location) {
+      throw new Error('File upload failed');
     }
+    return file.location;
+  }
+
+  async uploadTicketAttachment(file, userId) {
+    if (!file || !file.location) {
+      throw new Error('File upload failed');
+    }
+    return file.location;
+  }
+
+  // ==================== DELETION ====================
+
+  /**
+   * Delete file from S3
+   */
+  async deleteFile(fileUrl) {
+    try {
+      if (!fileUrl) return false;
+
+      // Extract key from URL
+      // S3 URL format: https://bucket.s3.region.amazonaws.com/folder/filename
+      // or https://s3.region.amazonaws.com/bucket/folder/filename
+      
+      const url = new URL(fileUrl);
+      // Remove leading slash to get key
+      const key = url.pathname.substring(1); 
+
+      const command = new DeleteObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: key,
+      });
+
+      await s3.send(command);
+      return true;
+    } catch (error) {
+      console.error('S3 delete error:', error);
+      // Don't throw, just return false, so we don't break the main flow if cleanup fails
+      return false;
+    }
+  }
+
+  // Aliases for compatibility with existing code
+  async deleteProfilePhoto(photoUrl) {
+    return this.deleteFile(photoUrl);
   }
 
   async deletePetPhoto(photoUrl) {
-    try {
-      const publicId = this.getPublicIdFromUrl(photoUrl);
-      if (publicId) {
-        await cloudinary.uploader.destroy(publicId);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error deleting pet photo:', error);
-      return false;
-    }
+    return this.deleteFile(photoUrl);
   }
-
-  // ==================== TICKET ATTACHMENTS ====================
-
-  async uploadTicketAttachment(file, userId) {
-    try {
-      const isImage = file.mimetype.startsWith('image/');
-      const resourceType = isImage ? 'image' : 'raw'; // 'raw' for PDFs, Docs, etc.
-
-      const options = {
-        folder: this.folders.tickets,
-        public_id: `ticket-${userId}-${Date.now()}`,
-        resource_type: resourceType,
-      };
-
-      // Apply optimization only for images
-      if (isImage) {
-        options.transformation = [{ quality: 'auto', fetch_format: 'auto' }];
-      }
-
-      return await this.uploadToCloudinary(file.buffer, options);
-    } catch (error) {
-      throw new Error('Failed to upload ticket attachment');
-    }
-  }
-
+  
   async deleteTicketAttachment(attachmentUrl) {
-    try {
-      const publicId = this.getPublicIdFromUrl(attachmentUrl);
-      if (publicId) {
-        // We need to know if it was 'image' or 'raw' to delete correctly, 
-        // but destroy usually defaults to image. For raw, we might need a stored type.
-        // For simplicity, we'll try both or just image for now.
-        // In a production system, store public_id and resource_type in DB.
-        await cloudinary.uploader.destroy(publicId); 
-        // Note: For raw files, you might need { resource_type: 'raw' }
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Error deleting ticket attachment:', error);
-      return false;
-    }
+    return this.deleteFile(attachmentUrl);
   }
 
   // ==================== HELPER METHODS ====================
@@ -207,10 +86,6 @@ class UploadService {
     if (bytes === 0) return '0 Bytes';
     const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)));
     return Math.round(bytes / Math.pow(1024, i), 2) + ' ' + sizes[i];
-  }
-
-  isValidFileType(mimetype, allowedTypes) {
-    return allowedTypes.includes(mimetype);
   }
 }
 

@@ -1,14 +1,44 @@
 // ============================================
 // FILE: middlewares/upload.middleware.js
-// Complete Upload Middleware (Updated)
+// Complete Upload Middleware (S3 Consolidated)
 // ============================================
 
 const multer = require('multer');
+const multerS3 = require('multer-s3');
+const { S3Client } = require('@aws-sdk/client-s3');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 const { errorResponse } = require('../utils/response.util');
 
-// Configure multer for memory storage
-const storage = multer.memoryStorage();
+// Configure AWS S3 Client
+const s3 = new S3Client({
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+  region: process.env.AWS_REGION || 'ap-south-1',
+});
+
+const BUCKET_NAME = process.env.AWS_S3_BUCKET || 'tnt-app-assets';
+
+/**
+ * Configure S3 storage engine
+ * @param {string} folderPrefix - The folder within the bucket (e.g., 'profile-photos')
+ */
+const getS3Storage = (folderPrefix) => multerS3({
+  s3: s3,
+  bucket: BUCKET_NAME,
+  // acl: 'public-read', // Deprecated/disabled on many new buckets. Use bucket policies instead.
+  contentType: multerS3.AUTO_CONTENT_TYPE,
+  metadata: (req, file, cb) => {
+    cb(null, { fieldName: file.fieldname });
+  },
+  key: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const filename = `${folderPrefix}/${uuidv4()}${ext}`;
+    cb(null, filename);
+  },
+});
 
 // File filter for profile/pet photos
 const imageFileFilter = (req, file, cb) => {
@@ -44,7 +74,7 @@ const ticketFileFilter = (req, file, cb) => {
 
 // Multer configurations
 const profilePhotoUpload = multer({
-  storage: storage,
+  storage: getS3Storage('profile-photos'),
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB
   },
@@ -52,7 +82,7 @@ const profilePhotoUpload = multer({
 });
 
 const petPhotoUpload = multer({
-  storage: storage,
+  storage: getS3Storage('pet-photos'),
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB
   },
@@ -60,9 +90,9 @@ const petPhotoUpload = multer({
 });
 
 const ticketAttachmentUpload = multer({
-  storage: storage,
+  storage: getS3Storage('ticket-attachments'),
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB for ticket attachments
+    fileSize: 10 * 1024 * 1024 // 10MB
   },
   fileFilter: ticketFileFilter
 });
@@ -121,5 +151,6 @@ const uploadTicketAttachment = (req, res, next) => {
 module.exports = {
   uploadProfilePhoto,
   uploadPetPhoto,
-  uploadTicketAttachment  // NEW: Export ticket attachment middleware
+  uploadTicketAttachment,
+  s3 // Exporting s3 instance just in case
 };
