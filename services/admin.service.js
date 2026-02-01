@@ -942,7 +942,7 @@ class AdminService {
     const subsQuery = `
       SELECT s.*, t.tier_name
       FROM subscriptions s
-      JOIN subscription_tiers t ON s.tier_id = t.tier_id
+      JOIN subscription_tiers_ref t ON s.tier_id = t.tier_id
       WHERE s.user_id = $1 ORDER BY s.created_at DESC
     `;
     const subsResult = await pool.query(subsQuery, [customerId]);
