@@ -109,10 +109,13 @@ class ServiceService {
       SELECT *
       FROM service_eligibility_config
       WHERE service_id = $1
-        AND species_id = $2
-        AND life_stage_id = $3
+        AND (species_id = $2 OR species_id IS NULL)
+        AND (life_stage_id = $3 OR life_stage_id IS NULL)
         AND (tier_id = $4 OR tier_id IS NULL)
-      ORDER BY tier_id DESC NULLS LAST
+      ORDER BY 
+        (species_id IS NOT NULL) DESC,
+        (life_stage_id IS NOT NULL) DESC,
+        tier_id DESC NULLS LAST
       LIMIT 1
     `;
 
@@ -167,7 +170,7 @@ class ServiceService {
     };
   }
 
-  async getAvailableSlots(serviceId, date, locationTypeId = null) {
+  async getAvailableSlots(serviceId, date, locationTypeId = null, addressId = null) {
     // Check if date is blackout date
     const blackoutQuery = `
       SELECT * FROM service_blackout_dates
@@ -189,15 +192,31 @@ class ServiceService {
     // Get day of week (0 = Sunday)
     const dayOfWeek = new Date(date).getDay();
 
+    // Get Pincode if address is provided
+    let pincode = null;
+    if (addressId) {
+      const addrResult = await pool.query(
+        'SELECT pincode FROM user_addresses WHERE address_id = $1',
+        [addressId]
+      );
+      if (addrResult.rows.length > 0) {
+        pincode = addrResult.rows[0].pincode;
+      }
+    }
+
     // Get service availability configuration
+    // Logic: Look for exact pincode match first, then fallback to NULL (Global) if no specific rule exists
     const availQuery = `
       SELECT * FROM service_availability
       WHERE service_id = $1 
         AND day_of_week = $2 
         AND is_active = true
+        AND (pincode = $3 OR pincode IS NULL)
+      ORDER BY (pincode IS NOT NULL) DESC
+      LIMIT 1
     `;
 
-    const availResult = await pool.query(availQuery, [serviceId, dayOfWeek]);
+    const availResult = await pool.query(availQuery, [serviceId, dayOfWeek, pincode]);
 
     if (availResult.rows.length === 0) {
       return [];
@@ -319,7 +338,12 @@ class ServiceService {
       }
 
       // Check slot availability
-      const slots = await this.getAvailableSlots(service_id, booking_date, location_type_id);
+      const slots = await this.getAvailableSlots(
+        service_id, 
+        booking_date, 
+        location_type_id,
+        address_id // Pass address_id for pincode lookup
+      );
       const requestedSlot = slots.find(s => s.time === booking_time);
 
       if (!requestedSlot || !requestedSlot.available) {
@@ -1075,9 +1099,21 @@ class ServiceService {
     ]);
 
     if (result.rowCount > 0) {
+      const newService = result.rows[0];
+
+      // Create default "All Access" eligibility rule
+      const eligibilityQuery = `
+        INSERT INTO service_eligibility_config (
+          service_id, species_id, life_stage_id, tier_id, is_included
+        ) VALUES ($1, NULL, NULL, NULL, true)
+      `;
+      await pool.query(eligibilityQuery, [newService.service_id]);
+
       if (icon_url) await attachmentService.markPermanent(icon_url);
       if (banner_image_url) await attachmentService.markPermanent(banner_image_url);
       if (video_url) await attachmentService.markPermanent(video_url);
+
+      return newService;
     }
 
     return result.rows[0];
@@ -1182,8 +1218,8 @@ class ServiceService {
         lsr.life_stage_name,
         str.tier_name
       FROM service_eligibility_config sec
-      JOIN species_ref sr ON sec.species_id = sr.species_id
-      JOIN life_stages_ref lsr ON sec.life_stage_id = lsr.life_stage_id
+      LEFT JOIN species_ref sr ON sec.species_id = sr.species_id
+      LEFT JOIN life_stages_ref lsr ON sec.life_stage_id = lsr.life_stage_id
       LEFT JOIN subscription_tiers_ref str ON sec.tier_id = str.tier_id
       WHERE sec.service_id = $1
       ORDER BY sr.species_name, lsr.life_stage_name
@@ -1253,13 +1289,14 @@ class ServiceService {
             INSERT INTO service_availability (
               service_id, day_of_week, start_time, end_time,
               slot_duration_minutes, max_bookings_per_slot, buffer_time_minutes,
-              is_active
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+              is_active, pincode
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           `;
           await client.query(insertQuery, [
             serviceId, avail.day_of_week, avail.start_time, avail.end_time,
             avail.slot_duration_minutes || 60, avail.max_bookings_per_slot || 5, 
-            avail.buffer_time_minutes || 15, avail.is_active ?? true
+            avail.buffer_time_minutes || 15, avail.is_active ?? true,
+            avail.pincode || null
           ]);
         }
       }
