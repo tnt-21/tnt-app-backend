@@ -85,63 +85,45 @@ class SubscriptionTiersService {
    * Update tier
    */
   async update(id, data) {
-    const { 
-      tier_code, 
-      tier_name, 
-      tier_description, 
-      marketing_tagline, 
-      base_price, 
-      display_order, 
-      icon_url, 
-      color_hex, 
-      is_active 
-    } = data;
-
     // Check if exists
     const currentTier = await this.getById(id);
 
-    // Check code conflict
-    if (tier_code) {
-      const existing = await pool.query(
-        'SELECT tier_id FROM subscription_tiers_ref WHERE tier_code = $1 AND tier_id != $2',
-        [tier_code, id]
-      );
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
 
-      if (existing.rows.length > 0) {
-        throw new Error('Tier code already exists');
+    const allowedFields = [
+      'tier_code', 'tier_name', 'tier_description', 'marketing_tagline',
+      'base_price', 'display_order', 'icon_url', 'color_hex', 'is_active'
+    ];
+
+    allowedFields.forEach(field => {
+      if (data[field] !== undefined) {
+        updates.push(`${field} = $${paramCount}`);
+        values.push(data[field]);
+        paramCount++;
       }
+    });
+
+    if (updates.length === 0) {
+      return currentTier;
     }
 
-    const result = await pool.query(
-      `UPDATE subscription_tiers_ref 
-       SET tier_code = COALESCE($1, tier_code),
-           tier_name = COALESCE($2, tier_name),
-           tier_description = COALESCE($3, tier_description),
-           marketing_tagline = COALESCE($4, marketing_tagline),
-           base_price = COALESCE($5, base_price),
-           display_order = COALESCE($6, display_order),
-           icon_url = COALESCE($7, icon_url),
-           color_hex = COALESCE($8, color_hex),
-           is_active = COALESCE($9, is_active),
-           updated_at = NOW()
-       WHERE tier_id = $10
-       RETURNING *`,
-      [
-        tier_code, 
-        tier_name, 
-        tier_description, 
-        marketing_tagline, 
-        base_price, 
-        display_order, 
-        icon_url, 
-        color_hex, 
-        is_active, 
-        id
-      ]
-    );
+    updates.push(`updated_at = NOW()`);
+    values.push(id);
 
-    if (icon_url && icon_url !== currentTier.icon_url) {
-      await attachmentService.markPermanent(icon_url);
+    const query = `
+      UPDATE subscription_tiers_ref 
+      SET ${updates.join(', ')}
+      WHERE tier_id = $${paramCount}
+      RETURNING *
+    `;
+
+    const result = await pool.query(query, values);
+
+    // Handle icon updates
+    if (data.icon_url && data.icon_url !== currentTier.icon_url) {
+      await attachmentService.markPermanent(data.icon_url);
       if (currentTier.icon_url) {
         attachmentService.unmarkPermanent(currentTier.icon_url).catch(err =>
           console.error("Failed to unmark old tier icon:", err)

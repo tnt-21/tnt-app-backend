@@ -2,6 +2,7 @@ const { pool } = require("../config/database");
 const { AppError } = require("../utils/response.util");
 const { v4: uuidv4 } = require("uuid");
 const paymentService = require("./payment.service");
+const attachmentService = require("./attachment.service");
 
 class SubscriptionService {
   // ==================== BROWSE TIERS ====================
@@ -161,7 +162,7 @@ class SubscriptionService {
   // ==================== ADMIN MANAGEMENT ====================
 
   async updateTier(tierId, updates) {
-    const allowedFields = ['base_price', 'tier_name', 'tier_description', 'marketing_tagline', 'is_active'];
+    const allowedFields = ['base_price', 'tier_name', 'tier_description', 'marketing_tagline', 'is_active', 'icon_url', 'color_hex', 'display_order'];
     const fields = Object.keys(updates).filter(key => allowedFields.includes(key));
     
     if (fields.length === 0) {
@@ -178,10 +179,23 @@ class SubscriptionService {
       RETURNING *
     `;
 
+    // Get current state for attachment handling
+    const currentTier = await pool.query('SELECT icon_url FROM subscription_tiers_ref WHERE tier_id = $1', [tierId]);
+
     const result = await pool.query(query, values);
 
     if (result.rows.length === 0) {
       throw new AppError('Tier not found', 404, 'TIER_NOT_FOUND');
+    }
+
+    // Handle icon updates
+    if (updates.icon_url && updates.icon_url !== (currentTier.rows[0]?.icon_url)) {
+      await attachmentService.markPermanent(updates.icon_url);
+      if (currentTier.rows[0]?.icon_url) {
+        attachmentService.unmarkPermanent(currentTier.rows[0].icon_url).catch(err =>
+          console.error("Failed to unmark legacy tier icon:", err)
+        );
+      }
     }
 
     return result.rows[0];
