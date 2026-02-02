@@ -89,7 +89,7 @@ class ServiceCategoriesService {
     } = data;
 
     // Check if exists
-    await this.getById(id);
+    const currentCategory = await this.getById(id);
 
     // Check code conflict
     if (category_code) {
@@ -108,7 +108,7 @@ class ServiceCategoriesService {
        SET category_code = COALESCE($1, category_code),
            category_name = COALESCE($2, category_name),
            description = COALESCE($3, description),
-           icon_url = $4,
+           icon_url = COALESCE($4, icon_url),
            display_order = COALESCE($5, display_order),
            is_active = COALESCE($6, is_active),
            updated_at = NOW()
@@ -125,7 +125,6 @@ class ServiceCategoriesService {
       ]
     );
 
-    const currentCategory = await this.getById(id);
     if (icon_url && icon_url !== currentCategory.icon_url) {
       await attachmentService.markPermanent(icon_url);
       if (currentCategory.icon_url) {

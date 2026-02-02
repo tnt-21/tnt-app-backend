@@ -1289,21 +1289,19 @@ class AdminService {
       // 2. Update/Create assignment
       await client.query(
         `INSERT INTO assignments (booking_id, caregiver_id, assigned_by, status, assigned_at)
-         VALUES ($1, $2, $3, 'pending', NOW())
+         VALUES ($1, $2, $3, 'assigned', NOW())
          ON CONFLICT (booking_id) DO UPDATE SET 
            caregiver_id = EXCLUDED.caregiver_id,
            assigned_by = EXCLUDED.assigned_by,
            assigned_at = NOW(),
-           status = 'pending'`,
+           status = 'assigned'`,
         [bookingId, caregiverId, adminId]
       );
 
       // Update updated_at on booking
       await client.query('UPDATE bookings SET updated_at = NOW() WHERE booking_id = $1', [bookingId]);
 
-      // 3. Optional: Auto-update status to 'confirmed' if currently 'pending'?
-      // Let's just log the change for now.
-      
+      // 3. Log the change
       await client.query(
         `INSERT INTO booking_status_history (
           booking_id, changed_by, changed_by_role, notes, created_at
@@ -1319,6 +1317,78 @@ class AdminService {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Find available caregivers for a specific booking based on city and pincode
+   */
+  async findAvailableCaregivers(bookingId) {
+    // 1. Get booking details (location, service category)
+    const bookingQuery = `
+      SELECT 
+        b.booking_date, b.booking_time, b.service_id,
+        ua.city, ua.pincode,
+        sc.category_id
+      FROM bookings b
+      LEFT JOIN user_addresses ua ON b.address_id = ua.address_id
+      LEFT JOIN service_catalog sc ON b.service_id = sc.service_id
+      WHERE b.booking_id = $1
+    `;
+    const bookingResult = await pool.query(bookingQuery, [bookingId]);
+    if (bookingResult.rows.length === 0) throw new AppError('Booking not found', 404, 'NOT_FOUND');
+    
+    const { city, pincode, category_id, booking_date } = bookingResult.rows[0];
+
+    // 2. Find caregivers who match city/pincode AND specialization
+    // Filter out those who are already assigned at that time or have set unavailability
+    const query = `
+      SELECT 
+        c.*,
+        u.full_name,
+        u.phone
+      FROM caregivers c
+      JOIN users u ON c.user_id = u.user_id
+      JOIN caregiver_specializations cs ON c.caregiver_id = cs.caregiver_id
+      WHERE c.status = 'active'
+      AND cs.category_id = $1
+      AND (c.city ILIKE $2 OR c.service_area_pincodes::jsonb @> $3::jsonb)
+      AND NOT EXISTS (
+        // Overlap check with other assignments
+        SELECT 1 FROM assignments a
+        JOIN bookings b2 ON a.booking_id = b2.booking_id
+        WHERE a.caregiver_id = c.caregiver_id
+        AND b2.booking_date = $4
+        AND a.status NOT IN ('rejected', 'cancelled')
+        // Simplified overlap: if same date, let admin decide or implement finer slot check
+      )
+      AND NOT EXISTS (
+        // Unavailability check
+        SELECT 1 FROM caregiver_availability ca
+        WHERE ca.caregiver_id = c.caregiver_id
+        AND ca.date = $4
+        AND ca.is_available = false
+      )
+    `;
+
+    const result = await pool.query(query, [
+      category_id, 
+      city, 
+      JSON.stringify(pincode ? [pincode] : []),
+      booking_date
+    ]);
+
+    return result.rows;
+  }
+
+  /**
+   * Automatically select the first available caregiver (FCFS principle)
+   */
+  async findAvailableCaregiverForBooking(bookingId) {
+    const available = await this.findAvailableCaregivers(bookingId);
+    if (available.length === 0) return null;
+    
+    // Simple FCFS or random selection from the pool
+    return available[0];
   }
 
   // ==================== PAYMENTS & FINANCIALS ====================

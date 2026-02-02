@@ -120,7 +120,7 @@ class SubscriptionTiersService {
            marketing_tagline = COALESCE($4, marketing_tagline),
            base_price = COALESCE($5, base_price),
            display_order = COALESCE($6, display_order),
-           icon_url = $7,
+           icon_url = COALESCE($7, icon_url),
            color_hex = COALESCE($8, color_hex),
            is_active = COALESCE($9, is_active),
            updated_at = NOW()

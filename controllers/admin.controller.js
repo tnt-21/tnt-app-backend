@@ -416,6 +416,16 @@ class AdminController {
     }
   }
 
+  async getAvailableCaregivers(req, res, next) {
+    try {
+      const { id: bookingId } = req.params;
+      const result = await adminService.findAvailableCaregivers(bookingId);
+      return ResponseUtil.success(res, result, 'Available caregivers retrieved successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // ==================== PAYMENTS & FINANCIALS ====================
 
   async getAllInvoices(req, res, next) {

@@ -133,6 +133,7 @@ router.get('/bookings', adminController.getAllBookings);
 router.get('/bookings/:id', adminController.getBookingById);
 router.patch('/bookings/:id/status', adminController.updateBookingStatus);
 router.patch('/bookings/:id/assign', adminController.assignCaregiver);
+router.get('/bookings/:id/available-caregivers', adminController.getAvailableCaregivers);
 
 // Payments & Financials Management
 router.get('/payments/metrics', adminController.getPaymentMetrics);

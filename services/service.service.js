@@ -426,6 +426,19 @@ class ServiceService {
 
       const booking = bookingResult.rows[0];
 
+      // --- AUTOMATIC CAREGIVER ASSIGNMENT ---
+      try {
+        const adminService = require('./admin.service');
+        const caregiver = await adminService.findAvailableCaregiverForBooking(booking.booking_id);
+        
+        if (caregiver) {
+          await adminService.assignCaregiver(booking.booking_id, caregiver.caregiver_id, userId);
+        }
+      } catch (assignError) {
+        console.error('Auto-assignment failed:', assignError);
+        // We don't want to fail the entire booking if assignment fails
+      }
+
       // Get service details for invoice
       const serviceDetails = await client.query(
         'SELECT service_name FROM service_catalog WHERE service_id = $1',
