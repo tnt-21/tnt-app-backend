@@ -130,6 +130,7 @@ Table users {
   date_of_birth date
   status varchar(20) [default: 'active', note: 'active, inactive, suspended, deleted']
   created_at timestamp [default: `now()`]
+  password_hash varchar(255)
   updated_at timestamp [default: `now()`]
   last_login timestamp
   
@@ -141,6 +142,43 @@ Table users {
   }
   
   Note: 'All system users - customers, caregivers, admins'
+}
+
+
+Table attachments {
+  attachment_id uuid [primary key, default: `gen_random_uuid()`]
+  s3_key varchar(500) [not null]
+  url varchar(1000) [not null]
+  size bigint
+  mimetype varchar(100)
+  is_permanent boolean [default: false]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    (is_permanent, created_at)
+    url
+  }
+
+  Note: 'Tracks all uploaded files in S3'
+}
+
+Table admin_users {
+  admin_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, not null]
+  full_name varchar(255)
+  email varchar(255)
+  phone varchar(15)
+  role varchar(30) [note: 'admin, super_admin']
+  permissions json
+  is_active boolean [default: true]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    user_id
+    email
+  }
 }
 
 Table otp_verifications {
@@ -1685,4 +1723,160 @@ Table business_metrics {
 
   Note: 'Pre-calculated business metrics for reporting'
 }
+
+// ========================================
+// REFERRAL SYSTEM
+// ========================================
+
+Table referrals {
+  referral_id uuid [primary key]
+  referrer_id uuid [ref: > users.user_id, not null]
+  referred_id uuid [ref: > users.user_id, unique, not null]
+  status varchar(20) [default: 'pending', note: 'pending, completed, reward_issued']
+  created_at timestamp [default: `now()`]
+  completed_at timestamp
+  metadata jsonb
+
+  indexes {
+    referrer_id
+    status
+  }
+
+  Note: 'Tracks user-to-user referral relationships'
+}
+
+Table referral_rewards {
+  reward_id uuid [primary key]
+  referral_id uuid [ref: > referrals.referral_id, not null]
+  user_id uuid [ref: > users.user_id, not null]
+  reward_type varchar(30) [not null]
+  reward_value decimal(10,2)
+  status varchar(20) [default: 'pending']
+  promo_id uuid [ref: > promo_codes.promo_id]
+  notes text
+  created_at timestamp [default: `now()`]
+  processed_at timestamp
+
+  indexes {
+    user_id
+    status
+  }
+
+  Note: 'Tracks rewards issued for successful referrals'
+}
+
+// ========================================
+// VAN SERVICE & OPTIMIZATION
+// ========================================
+
+Table vans {
+  van_id uuid [primary key]
+  van_number varchar(50) [unique, not null]
+  van_name varchar(100) [not null]
+  registration_number varchar(20) [unique]
+  driver_id uuid [ref: > users.user_id]
+  status varchar(20) [default: 'active']
+  current_location_lat decimal(10,8)
+  current_location_lng decimal(11,8)
+  zone varchar(100) [default: 'Pune Central']
+  start_location_lat decimal(10,8)
+  start_location_lng decimal(11,8)
+  max_stops_per_day int [default: 6]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    status
+  }
+
+  Note: 'Fleet of care vans for doorstep services'
+}
+
+Table van_schedules {
+  schedule_id uuid [primary key]
+  van_id uuid [ref: > vans.van_id, not null]
+  schedule_date date [not null]
+  start_time time [not null, default: '09:00:00']
+  end_time time [not null, default: '18:00:00']
+  status varchar(20) [default: 'scheduled']
+  start_location_lat decimal(10,8)
+  start_location_lng decimal(11,8)
+  end_location_lat decimal(10,8)
+  end_location_lng decimal(11,8)
+  actual_start_time timestamp
+  actual_end_time timestamp
+  total_distance_km decimal(6,2) [default: 0]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    schedule_date
+    van_id
+  }
+
+  Note: 'Daily schedules for each van'
+}
+
+Table service_requests {
+  request_id uuid [primary key]
+  user_id uuid [ref: > users.user_id, not null]
+  pet_id uuid [ref: > pets.pet_id, not null]
+  service_id uuid [ref: > service_catalog.service_id, not null]
+  address_id uuid [ref: > user_addresses.address_id, not null]
+  subscription_id uuid [ref: > subscriptions.subscription_id]
+  service_type varchar(50) [not null]
+  latitude decimal(10,8) [not null]
+  longitude decimal(11,8) [not null]
+  address_line1 varchar(255)
+  city varchar(100)
+  pincode varchar(10)
+  priority smallint [default: 3]
+  urgency_score decimal(5,2) [default: 0]
+  last_service_date date
+  days_since_last_service int
+  status varchar(30) [default: 'pending']
+  assigned_date date
+  assigned_time time
+  assigned_schedule_id uuid [ref: > van_schedules.schedule_id]
+  route_sequence int
+  estimated_arrival_time time
+  estimated_departure_time time
+  notification_sent_at timestamp
+  customer_response_deadline timestamp
+  customer_responded_at timestamp
+  customer_response varchar(20)
+  rejection_count int [default: 0]
+  special_instructions text
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    (status, urgency_score, created_at)
+    (latitude, longitude)
+    (user_id, status)
+    (pet_id, service_type)
+    (assigned_schedule_id, route_sequence)
+  }
+
+  Note: 'Supply-side service request queue'
+}
+
+Table route_optimization_metrics {
+  metric_id uuid [primary key]
+  schedule_id uuid [ref: > van_schedules.schedule_id, not null]
+  total_stops int [not null]
+  total_distance_km decimal(10,2)
+  total_duration_minutes int
+  efficiency_score decimal(5,2)
+  pending_requests_count int
+  assigned_requests_count int
+  high_urgency_assigned int
+  algorithm_used varchar(50)
+  clustering_method varchar(50)
+  optimization_time_ms int
+  optimized_at timestamp [default: `now()`]
+  optimized_by uuid [ref: > users.user_id]
+  notes text
+}
+
 

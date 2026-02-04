@@ -31,6 +31,8 @@ const configRoutes = require('./routes/v1/config.routes');
 const analyticsRoutes = require('./routes/v1/analytics.routes');
 const uploadRoutes = require('./routes/v1/upload.routes'); // Import upload routes
 const auditRoutes = require('./routes/v1/audit.routes'); // Import audit routes
+const vanRoutes = require('./routes/van.routes'); // Import van routes
+const seedRoutes = require('./routes/seed.routes'); // Temporary seed routes
 
 // Import cron jobs
 const { initPetLifeStageJob } = require('./cron/pet.cron');
@@ -68,7 +70,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Rate limiting - General limiter for non-authenticated routes
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 1000,
   message: { success: false, message: 'Too many requests' },
   standardHeaders: true,
   legacyHeaders: false
@@ -144,6 +146,8 @@ app.use(`/api/${API_VERSION}/config`, configRoutes);
 app.use(`/api/${API_VERSION}/analytics`, analyticsRoutes);
 app.use(`/api/${API_VERSION}/upload`, uploadRoutes); // Mount upload routes
 app.use(`/api/${API_VERSION}/audit`, auditRoutes); // Mount audit routes
+app.use(`/api/${API_VERSION}/vans`, vanRoutes); // Mount van routes
+app.use(`/api/${API_VERSION}/seed`, seedRoutes); // Temporary seed endpoint
 
 // 404 Handler
 app.use((req, res) => {
