@@ -43,6 +43,7 @@
     "crypto": "^1.0.1",
     "dayjs": "^1.11.19",
     "express-rate-limit": "^8.2.1",
+    "firebase-admin": "^13.6.1",
     "helmet": "^8.1.0",
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",

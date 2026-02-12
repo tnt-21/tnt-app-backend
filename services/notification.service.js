@@ -151,8 +151,62 @@ class NotificationService {
         // Get user's FCM tokens
         const tokens = await this.getUserFCMTokens(userId);
         if (tokens.length > 0) {
-          // TODO: Implement FCM push notification
-          console.log(`Push notification to ${tokens.length} devices`);
+          try {
+            const { messaging } = require('../config/firebase');
+            
+            // Prepare the message payload
+            // Note: FCM 'multicast' is deprecated in favour of 'sendEachForMulticast'
+            const messagePayload = {
+              tokens: tokens,
+              notification: {
+                title: notification.title,
+                body: notification.message,
+              },
+              data: {
+                notification_id: notification.notification_id.toString(),
+                type: notification.notification_type,
+                click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                ...notification.action_data // Spread any custom action data
+              },
+              // Android specific config
+              android: {
+                priority: notification.priority === 'high' ? 'high' : 'normal',
+                notification: {
+                  sound: 'default',
+                  clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+                }
+              },
+              // Apple specific config
+              apns: {
+                payload: {
+                  aps: {
+                    sound: 'default',
+                    badge: 1,
+                  }
+                }
+              }
+            };
+
+            const response = await messaging.sendEachForMulticast(messagePayload);
+            console.log(`Push notification sent: ${response.successCount} successes, ${response.failureCount} failures`);
+            
+            // Clean up invalid tokens if any failures occurred
+            if (response.failureCount > 0) {
+              const failedTokens = [];
+              response.responses.forEach((resp, idx) => {
+                if (!resp.success) {
+                  failedTokens.push(tokens[idx]);
+                  // Check error code to see if token is invalid
+                  // error codes: messaging/registration-token-not-registered or messaging/invalid-registration-token
+                }
+              });
+              
+              // Optionally remove invalid tokens from DB
+              // await this.removeInvalidTokens(failedTokens); 
+            }
+          } catch (error) {
+            console.error('FCM Send Error:', error);
+          }
         }
         break;
 
