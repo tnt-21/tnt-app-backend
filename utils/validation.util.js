@@ -804,17 +804,16 @@ const createBookingSchema = Joi.object({
     "any.required": "Service ID is required",
   }),
 
-  booking_date: Joi.date().required().messages({
+  booking_date: Joi.date().allow(null).optional().messages({
     "date.base": "Invalid booking date",
-    "any.required": "Booking date is required",
   }),
 
   booking_time: Joi.string()
     .pattern(/^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/)
-    .required()
+    .allow(null)
+    .optional()
     .messages({
       "string.pattern.base": "Time must be in HH:MM:SS format",
-      "any.required": "Booking time is required",
     }),
 
   location_type_id: Joi.number().integer().min(1).max(2).required().messages({
