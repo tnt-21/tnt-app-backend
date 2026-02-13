@@ -487,7 +487,8 @@ class PaymentService {
 
         return {
           payment: paymentResult.rows[0],
-          gateway_response: gatewayResponse
+          gateway_response: gatewayResponse,
+          gateway_key: process.env.RAZORPAY_KEY_ID
         };
 
       } catch (error) {
