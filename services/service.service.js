@@ -702,7 +702,8 @@ class ServiceService {
         ua.state,
         ua.pincode,
         ua.latitude,
-        ua.longitude
+        ua.longitude,
+        i.invoice_id
       FROM bookings b
       LEFT JOIN service_catalog sc ON b.service_id = sc.service_id
       LEFT JOIN service_categories_ref scr ON sc.category_id = scr.category_id
@@ -711,6 +712,7 @@ class ServiceService {
       LEFT JOIN booking_statuses_ref bs ON b.status_id = bs.status_id
       LEFT JOIN location_types_ref lt ON b.location_type_id = lt.location_type_id
       LEFT JOIN user_addresses ua ON b.address_id = ua.address_id
+      LEFT JOIN invoices i ON b.booking_id = i.booking_id
       WHERE b.booking_id = $1 AND b.user_id = $2
     `;
 

@@ -135,7 +135,10 @@ class ServiceController {
 
       return ResponseUtil.success(
         res,
-        booking,
+        {
+          booking,
+          payment_required: booking.payment_status === 'pending' && parseFloat(booking.total_amount) > 0
+        },
         'Booking created successfully',
         201
       );
