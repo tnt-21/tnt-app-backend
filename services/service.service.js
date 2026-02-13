@@ -73,6 +73,44 @@ class ServiceService {
     return result.rows[0];
   }
 
+  async getEligiblePetsForUser(serviceId, userId) {
+    // 1. Get all active pets for the user
+    const petsQuery = `
+      SELECT p.*, sr.species_code, ls.life_stage_code
+      FROM pets p
+      LEFT JOIN species_ref sr ON p.species_id = sr.species_id
+      LEFT JOIN life_stages_ref ls ON p.life_stage_id = ls.life_stage_id
+      WHERE p.owner_id = $1 AND p.is_active = true
+    `;
+    
+    const petsResult = await pool.query(petsQuery, [userId]);
+    const pets = petsResult.rows;
+    
+    if (pets.length === 0) {
+      return [];
+    }
+
+    const eligiblePets = [];
+
+    // 2. Check eligibility for each pet
+    for (const pet of pets) {
+      try {
+        const eligibility = await this.checkServiceEligibility(serviceId, pet.pet_id, userId);
+
+        if (eligibility.eligible) {
+          eligiblePets.push({
+            ...pet,
+            eligibility_details: eligibility
+          });
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+
+    return eligiblePets;
+  }
+
   async checkServiceEligibility(serviceId, petId, userId) {
     // Get pet details
     const petQuery = `
@@ -292,8 +330,8 @@ class ServiceService {
     const {
       pet_id,
       service_id,
-      booking_date,
-      booking_time,
+      booking_date = null,
+      booking_time = null,
       location_type_id,
       address_id,
       addons = [],
@@ -337,17 +375,19 @@ class ServiceService {
         }
       }
 
-      // Check slot availability
-      const slots = await this.getAvailableSlots(
-        service_id, 
-        booking_date, 
-        location_type_id,
-        address_id // Pass address_id for pincode lookup
-      );
-      const requestedSlot = slots.find(s => s.time === booking_time);
-
-      if (!requestedSlot || !requestedSlot.available) {
-        throw new AppError('Selected time slot is not available', 400, 'SLOT_UNAVAILABLE');
+      // Check slot availability ONLY if date and time are provided
+      if (booking_date && booking_time) {
+        const slots = await this.getAvailableSlots(
+          service_id, 
+          booking_date, 
+          location_type_id,
+          address_id // Pass address_id for pincode lookup
+        );
+        const requestedSlot = slots.find(s => s.time === booking_time);
+  
+        if (!requestedSlot || !requestedSlot.available) {
+          throw new AppError('Selected time slot is not available', 400, 'SLOT_UNAVAILABLE');
+        }
       }
 
       // Calculate pricing

@@ -60,6 +60,13 @@ router.get(
   serviceController.getAvailableSlots
 );
 
+// Get eligible pets for a service
+router.get(
+  '/:service_id/eligible-pets',
+  rateLimitMiddleware(30, 60),
+  serviceController.getEligiblePets
+);
+
 // Calculate booking price
 router.post(
   '/bookings/calculate-price',

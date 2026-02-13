@@ -71,6 +71,23 @@ class ServiceController {
     }
   }
 
+  async getEligiblePets(req, res, next) {
+    try {
+      const { service_id } = req.params;
+      const userId = req.user.user_id;
+
+      const eligiblePets = await serviceService.getEligiblePetsForUser(service_id, userId);
+
+      return ResponseUtil.success(
+        res,
+        { pets: eligiblePets, count: eligiblePets.length },
+        'Eligible pets retrieved successfully'
+      );
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getAvailableSlots(req, res, next) {
     try {
       const { service_id } = req.params;

@@ -637,8 +637,8 @@ Table bookings {
   pet_id uuid [ref: > pets.pet_id, not null]
   service_id uuid [ref: > service_catalog.service_id, not null]
   subscription_id uuid [ref: > subscriptions.subscription_id, note: 'null if non-subscriber']
-  booking_date date [not null]
-  booking_time time [not null]
+  booking_date date
+  booking_time time
   estimated_duration int [note: 'in minutes']
   actual_start_time timestamp
   actual_end_time timestamp
