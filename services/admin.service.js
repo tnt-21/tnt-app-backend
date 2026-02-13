@@ -2243,6 +2243,39 @@ class AdminService {
       client.release();
     }
   }
+  /**
+   * Update booking schedule (Date and Time)
+   */
+  async updateBookingSchedule(bookingId, bookingDate, bookingTime, adminId) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 1. Get current booking
+      const res = await client.query('SELECT booking_number FROM bookings WHERE booking_id = $1', [bookingId]);
+      if (res.rows.length === 0) throw new AppError('Booking not found', 404, 'NOT_FOUND');
+      
+      // 2. Update booking
+      const updateRes = await client.query(
+        'UPDATE bookings SET booking_date = $1, booking_time = $2, updated_at = NOW() WHERE booking_id = $3 RETURNING *',
+        [bookingDate, bookingTime, bookingId]
+      );
+
+      // 3. Log history
+      await client.query(
+        'INSERT INTO booking_status_history (history_id, booking_id, new_status_id, old_status_id, changed_by, reason, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW())',
+        [uuidv4(), bookingId, updateRes.rows[0].status_id, updateRes.rows[0].status_id, adminId, 'Schedule updated by admin']
+      );
+
+      await client.query('COMMIT');
+      return updateRes.rows[0];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 }
 
 module.exports = new AdminService();

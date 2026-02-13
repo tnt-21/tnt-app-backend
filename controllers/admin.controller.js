@@ -416,6 +416,23 @@ class AdminController {
     }
   }
 
+  async updateBookingSchedule(req, res, next) {
+    try {
+      const { id: bookingId } = req.params;
+      const { booking_date, booking_time } = req.body;
+      const adminId = req.user.user_id;
+
+      if (!booking_date || !booking_time) {
+        return ResponseUtil.error(res, 'Booking date and time are required', 400);
+      }
+
+      const result = await adminService.updateBookingSchedule(bookingId, booking_date, booking_time, adminId);
+      return ResponseUtil.success(res, result, 'Booking schedule updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getAvailableCaregivers(req, res, next) {
     try {
       const { id: bookingId } = req.params;

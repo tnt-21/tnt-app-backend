@@ -132,6 +132,7 @@ router.post('/care-managers/assignments/:assignmentId/interactions', adminContro
 router.get('/bookings', adminController.getAllBookings);
 router.get('/bookings/:id', adminController.getBookingById);
 router.patch('/bookings/:id/status', adminController.updateBookingStatus);
+router.patch('/bookings/:id/schedule', adminController.updateBookingSchedule);
 router.patch('/bookings/:id/assign', adminController.assignCaregiver);
 router.get('/bookings/:id/available-caregivers', adminController.getAvailableCaregivers);
 
