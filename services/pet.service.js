@@ -6,7 +6,8 @@ class PetService {
   // ==================== HELPER METHODS ====================
 
   async verifyPetOwnership(petId, userId) {
-    const query = "SELECT owner_id FROM pets WHERE pet_id = $1 AND is_active = true";
+    // const query = "SELECT owner_id FROM pets WHERE pet_id = $1 AND is_active = true";
+    const query = "SELECT owner_id, is_active FROM pets WHERE pet_id = $1";
     const result = await pool.query(query, [petId]);
 
     if (result.rows.length === 0) {
@@ -17,7 +18,8 @@ class PetService {
       throw new AppError("Unauthorized access to pet", 403, "UNAUTHORIZED_PET_ACCESS");
     }
 
-    return true;
+    // return true;
+    return result.rows[0];
   }
 
   async calculateLifeStage(speciesId, dateOfBirth) {
@@ -254,7 +256,12 @@ class PetService {
   }
 
   async updatePet(petId, userId, updateData) {
-    await this.verifyPetOwnership(petId, userId);
+    // await this.verifyPetOwnership(petId, userId);
+    const petCheck = await this.verifyPetOwnership(petId, userId);
+
+    if (!petCheck.is_active) {
+      throw new AppError("Pet is inactive", 400, "PET_INACTIVE");
+    }
 
     const updates = [];
     const values = [];
@@ -354,7 +361,12 @@ class PetService {
   }
 
   async deletePet(petId, userId) {
-    await this.verifyPetOwnership(petId, userId);
+    // await this.verifyPetOwnership(petId, userId);
+    const pet = await this.verifyPetOwnership(petId, userId);
+
+    if (!pet.is_active) {
+      throw new AppError("Pet already deleted", 400, "PET_ALREADY_DELETED");
+    }
 
     // Check for active subscriptions
     const subscriptionCheck = await pool.query(
