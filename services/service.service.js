@@ -465,6 +465,27 @@ class ServiceService {
       ]);
 
       const booking = bookingResult.rows[0];
+      
+      // --- VAN ROUTING INTEGRATION ---
+      // For Grooming category (1), always create a service_request for the optimizer
+      const categoryCheck = await client.query('SELECT category_id FROM service_catalog WHERE service_id = $1', [service_id]);
+      if (categoryCheck.rows.length > 0 && parseInt(categoryCheck.rows[0].category_id) === 1) {
+        try {
+          const vanService = require('./van.service');
+          await vanService.createServiceRequest({
+            user_id: userId,
+            pet_id,
+            service_id,
+            address_id,
+            subscription_id: subscriptionId,
+            service_type: 'grooming',
+            special_instructions
+          }, client);
+          console.log(`✅ [VanRouting] Grooming service request created for booking ${booking.booking_id}`);
+        } catch (vanError) {
+          console.error('⚠️ [VanRouting] Failed to create service request:', vanError);
+        }
+      }
 
       // --- AUTOMATIC CAREGIVER ASSIGNMENT ---
       try {
