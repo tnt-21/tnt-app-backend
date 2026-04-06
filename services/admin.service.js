@@ -1353,16 +1353,16 @@ class AdminService {
       AND cs.category_id = $1
       AND (c.city ILIKE $2 OR c.service_area_pincodes::jsonb @> $3::jsonb)
       AND NOT EXISTS (
-        // Overlap check with other assignments
+        -- Overlap check with other assignments
         SELECT 1 FROM assignments a
         JOIN bookings b2 ON a.booking_id = b2.booking_id
         WHERE a.caregiver_id = c.caregiver_id
         AND b2.booking_date = $4
         AND a.status NOT IN ('rejected', 'cancelled')
-        // Simplified overlap: if same date, let admin decide or implement finer slot check
+        -- Simplified overlap: if same date, let admin decide or implement finer slot check
       )
       AND NOT EXISTS (
-        // Unavailability check
+        -- Unavailability check
         SELECT 1 FROM caregiver_availability ca
         WHERE ca.caregiver_id = c.caregiver_id
         AND ca.date = $4
