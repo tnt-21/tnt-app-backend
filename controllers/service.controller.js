@@ -249,6 +249,58 @@ class ServiceController {
     }
   }
 
+  async confirmBookingSchedule(req, res, next) {
+    try {
+      const userId = req.user.user_id;
+      const { booking_id } = req.params;
+
+      const result = await serviceService.confirmBookingSchedule(booking_id, userId);
+
+      // Audit log
+      await auditUtil.log({
+        user_id: userId,
+        action: 'update',
+        entity_type: 'booking',
+        entity_id: booking_id,
+        changes_summary: `Booking schedule confirmed by user`,
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent']
+      });
+
+      return ResponseUtil.success(res, result, 'Booking schedule confirmed successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async requestReschedule(req, res, next) {
+    try {
+      const userId = req.user.user_id;
+      const { booking_id } = req.params;
+      const { reason } = req.body;
+
+      const result = await serviceService.requestReschedule(
+        booking_id,
+        userId,
+        reason
+      );
+
+      await auditUtil.log({
+        user_id: userId,
+        action: 'update',
+        entity_type: 'booking',
+        entity_id: booking_id,
+        changes_summary: `Booking reschedule requested`,
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent']
+      });
+
+      return ResponseUtil.success(res, result, 'Reschedule request submitted successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async getBookingHistory(req, res, next) {
     try {
       const userId = req.user.user_id;

@@ -1142,7 +1142,7 @@ class AdminService {
       paramCount++;
     }
 
-    query += ` ORDER BY b.booking_date DESC, b.booking_time DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
+    query += ` ORDER BY b.created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
     values.push(limit, offset);
 
     const result = await pool.query(query, values);
@@ -2252,10 +2252,12 @@ class AdminService {
       await client.query('BEGIN');
 
       // 1. Get current booking
-      const res = await client.query('SELECT booking_number FROM bookings WHERE booking_id = $1', [bookingId]);
+      const res = await client.query('SELECT booking_number, user_id FROM bookings WHERE booking_id = $1', [bookingId]);
       if (res.rows.length === 0) throw new AppError('Booking not found', 404, 'NOT_FOUND');
       
-      // 2. Update booking
+      const userId = res.rows[0].user_id;
+
+      // 2. Update booking (Keep current status until user confirms)
       const updateRes = await client.query(
         'UPDATE bookings SET booking_date = $1, booking_time = $2, updated_at = NOW() WHERE booking_id = $3 RETURNING *',
         [bookingDate, bookingTime, bookingId]
@@ -2266,6 +2268,23 @@ class AdminService {
         'INSERT INTO booking_status_history (history_id, booking_id, new_status_id, old_status_id, changed_by, reason, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW())',
         [uuidv4(), bookingId, updateRes.rows[0].status_id, updateRes.rows[0].status_id, adminId, 'Schedule updated by admin']
       );
+
+      // 4. Send Notification
+      try {
+        const notificationService = require('./notification.service');
+        await notificationService.sendNotification(userId, {
+          notification_type: 'booking_alert',
+          priority: 'high',
+          title: 'Action Required: Confirm Schedule',
+          message: `Your booking ${res.rows[0].booking_number} has been scheduled for ${bookingDate} at ${bookingTime}. Please confirm or reschedule.`,
+          action_type: 'booking_confirm',
+          action_data: { booking_id: bookingId }
+        });
+      } catch (e) {
+        console.error('Failed to send schedule notification:', e);
+      }
+
+
 
       await client.query('COMMIT');
       return updateRes.rows[0];

@@ -129,6 +129,20 @@ router.post(
   serviceController.rescheduleBooking
 );
 
+// Confirm booking schedule
+router.post(
+  '/bookings/:booking_id/confirm',
+  rateLimitMiddleware(10, 60),
+  serviceController.confirmBookingSchedule
+);
+
+// Request a reschedule
+router.post(
+  '/bookings/:booking_id/reschedule-request',
+  rateLimitMiddleware(10, 60),
+  serviceController.requestReschedule
+);
+
 // Get booking history
 router.get(
   '/bookings/:booking_id/history',

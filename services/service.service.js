@@ -901,6 +901,101 @@ class ServiceService {
     }
   }
 
+  async confirmBookingSchedule(bookingId, userId) {
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      // Get booking
+      const booking = await this.getBookingById(bookingId, userId);
+
+      // Check if it's already confirmed
+      if (booking.status_code === 'confirmed') {
+        throw new AppError('Booking is already confirmed', 400, 'ALREADY_CONFIRMED');
+      }
+
+      // Check if it's pending / rescheduled
+      const allowedStatuses = ['pending', 'rescheduled'];
+      if (!allowedStatuses.includes(booking.status_code)) {
+        throw new AppError('Booking status does not allow confirmation', 400, 'STATUS_NOT_ALLOWED');
+      }
+
+      // Get confirmed status ID
+      const statusResult = await client.query(
+        "SELECT status_id FROM booking_statuses_ref WHERE status_code = 'confirmed'"
+      );
+      const confirmedStatusId = statusResult.rows[0].status_id;
+
+      // Update booking
+      await client.query(
+        `UPDATE bookings 
+         SET status_id = $1, 
+             updated_at = NOW()
+         WHERE booking_id = $2`,
+        [confirmedStatusId, bookingId]
+      );
+
+      // Add to history
+      await client.query(
+        `INSERT INTO booking_status_history (
+          booking_id, old_status_id, new_status_id, changed_by, changed_by_role, reason, notes
+        ) VALUES ($1, $2, $3, $4, 'customer', $5, $6)`,
+        [
+          bookingId,
+          booking.status_id,
+          confirmedStatusId,
+          userId,
+          'User confirmed schedule',
+          'Confirmed schedule proposed by admin'
+        ]
+      );
+
+      await client.query('COMMIT');
+
+      return await this.getBookingById(bookingId, userId);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async requestReschedule(bookingId, userId, reason) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const booking = await this.getBookingById(bookingId, userId);
+
+      await client.query(
+        `INSERT INTO booking_status_history (
+          booking_id, old_status_id, new_status_id, changed_by, changed_by_role, reason, notes
+        ) VALUES ($1, $2, $2, $3, 'customer', $4, $5)`,
+        [
+          bookingId,
+          booking.status_id,
+          userId,
+          reason,
+          'User requested reschedule from the admin generated date.'
+        ]
+      );
+      
+      await client.query(
+        `UPDATE bookings SET cancellation_reason = $1, updated_at = NOW() WHERE booking_id = $2`,
+        [`Reschedule requested: ${reason}`, bookingId]
+      );
+
+      await client.query('COMMIT');
+      return await this.getBookingById(bookingId, userId);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async getBookingHistory(bookingId) {
     const query = `
       SELECT 
