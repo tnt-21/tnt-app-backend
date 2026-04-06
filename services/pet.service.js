@@ -161,8 +161,16 @@ class PetService {
     let paramCount = 2;
 
     if (filters.is_active !== undefined) {
+      if (filters.is_active !== 'all') {
+        query += ` AND p.is_active = $${paramCount}`;
+        // Support both string 'true' and boolean true
+        params.push(filters.is_active === 'true' || filters.is_active === true);
+        paramCount++;
+      }
+    } else {
+      // Default behavior: only return active pets
       query += ` AND p.is_active = $${paramCount}`;
-      params.push(filters.is_active === 'true');
+      params.push(true);
       paramCount++;
     }
 
