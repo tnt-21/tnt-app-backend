@@ -40,6 +40,7 @@ class SubscriptionTiersService {
       tier_description, 
       marketing_tagline, 
       base_price, 
+      annual_price,
       display_order, 
       icon_url, 
       color_hex, 
@@ -58,8 +59,8 @@ class SubscriptionTiersService {
 
     const result = await pool.query(
       `INSERT INTO subscription_tiers_ref 
-       (tier_code, tier_name, tier_description, marketing_tagline, base_price, display_order, icon_url, color_hex, is_active, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+       (tier_code, tier_name, tier_description, marketing_tagline, base_price, annual_price, display_order, icon_url, color_hex, is_active, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
        RETURNING *`,
       [
         tier_code, 
@@ -67,6 +68,7 @@ class SubscriptionTiersService {
         tier_description || null, 
         marketing_tagline || null, 
         base_price || 0, 
+        annual_price || 0,
         display_order || 0, 
         icon_url || null, 
         color_hex || '#000000', 
@@ -94,7 +96,7 @@ class SubscriptionTiersService {
 
     const allowedFields = [
       'tier_code', 'tier_name', 'tier_description', 'marketing_tagline',
-      'base_price', 'display_order', 'icon_url', 'color_hex', 'is_active'
+      'base_price', 'annual_price', 'display_order', 'icon_url', 'color_hex', 'is_active'
     ];
 
     allowedFields.forEach(field => {

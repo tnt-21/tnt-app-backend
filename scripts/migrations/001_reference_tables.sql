@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS subscription_tiers_ref (
     tier_description TEXT,
     marketing_tagline VARCHAR(255),
     base_price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    annual_price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
     display_order INT,
     icon_url VARCHAR(500),
     color_hex VARCHAR(7),
