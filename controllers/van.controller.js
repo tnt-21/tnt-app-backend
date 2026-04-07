@@ -152,6 +152,16 @@ class VanController {
       next(error);
     }
   }
+
+  async finalizeRoute(req, res, next) {
+    try {
+      const { schedule_id } = req.params;
+      const result = await vanService.finalizeRoute(schedule_id);
+      return ResponseUtil.success(res, result, `Route finalized successfully! Notifications sent to ${result.count} customers.`);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = new VanController();

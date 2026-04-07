@@ -18,6 +18,7 @@ const {
   routeFitsTimeWindow,
   calculateRouteDistance
 } = require('../utils/tsp-solver.util');
+const notificationService = require('./notification.service');
 
 // Configuration Constants
 const CONFIG = {
@@ -471,7 +472,11 @@ class VanService {
       if (!externalClient) await client.query('COMMIT');
       
       return {
-        schedule,
+        schedule: {
+          ...schedule,
+          van_name: van.van_name,
+          van_number: van.van_number
+        },
         assignments,
         totalDistanceKm: totalDistance,
         efficiencyScore
@@ -663,6 +668,65 @@ class VanService {
     `;
     const result = await (externalClient || pool).query(query, [scheduleId]);
     return result.rows;
+  }
+
+  /**
+   * Finalize a generated route and notify all customers
+   */
+  async finalizeRoute(scheduleId, externalClient = null) {
+    const client = externalClient || await pool.connect();
+    try {
+      if (!externalClient) await client.query('BEGIN');
+
+      // Fetch all assignments for this schedule
+      const assignments = await this.getScheduleAssignments(scheduleId, client);
+
+      if (assignments.length === 0) {
+        throw new AppError('No assignments found for this schedule', 404);
+      }
+
+      for (const assignment of assignments) {
+        // Prepare variables for the notification template
+        // date format: Thursday, April 9, 2026
+        const dateObj = new Date(assignment.assigned_date);
+        const variables = {
+          user_name: assignment.customer_name,
+          service_name: assignment.service_name,
+          pet_name: assignment.pet_name,
+          date: dateObj.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+          }),
+          time: assignment.assigned_time.substring(0, 5), // '09:30'
+          request_id: assignment.request_id
+        };
+
+        // Send push notification using the template
+        await notificationService.sendTemplateNotification(
+          assignment.user_id,
+          'schedule_confirmation',
+          variables,
+          'push'
+        );
+
+        // Update notification_sent_at in service_requests
+        await client.query(
+          'UPDATE service_requests SET notification_sent_at = NOW() WHERE request_id = $1',
+          [assignment.request_id]
+        );
+      }
+
+      if (!externalClient) await client.query('COMMIT');
+      return { success: true, count: assignments.length };
+    } catch (error) {
+      if (!externalClient) await client.query('ROLLBACK');
+      console.error('Error finalizing route:', error);
+      throw error;
+    } finally {
+      if (!externalClient) client.release();
+    }
   }
 }
 

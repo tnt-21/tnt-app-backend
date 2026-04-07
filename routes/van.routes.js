@@ -47,4 +47,7 @@ router.post('/schedules', authenticate, vanController.createSchedule);
 // Get assignments for a schedule
 router.get('/schedules/:schedule_id/assignments', authenticate, vanController.getScheduleAssignments);
 
+// Finalize route and notify customers
+router.post('/schedules/:schedule_id/finalize', authenticate, vanController.finalizeRoute);
+
 module.exports = router;

@@ -47,7 +47,8 @@ class SMSService {
    * MSG91 Implementation
    */
   async sendViaMSG91(phone, otp) {
-    const url = `https://api.msg91.com/api/v5/otp`;
+    // const url = `https://api.msg91.com/api/v5/otp`;
+    const url = `https://control.msg91.com/api/v5/otp`;
     
     const payload = {
       template_id: this.msg91TemplateId,
@@ -71,6 +72,9 @@ class SMSService {
    * Twilio Implementation
    */
   async sendViaTwilio(phone, otp) {
+    if (!this.twilioAccountSid || !this.twilioAuthToken) {
+      throw new Error('Twilio credentials not configured');
+    }
     const accountSid = this.twilioAccountSid;
     const authToken = this.twilioAuthToken;
     const client = require('twilio')(accountSid, authToken);
