@@ -194,6 +194,26 @@ class VanService {
       await client.query('BEGIN');
       
       console.log(`🚀 Generating routes for ${daysAhead} days starting ${startDate}...`);
+
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + daysAhead - 1);
+      const endDateStr = endDate.toISOString().split('T')[0];
+
+      // Step 0: Clear existing scheduled assignments for this date range
+      // Only clear if they are in 'scheduled' status (not confirmed/rejected/completed)
+      console.log(`🧹 Clearing existing scheduled assignments between ${startDate} and ${endDateStr}...`);
+      await client.query(`
+        UPDATE service_requests 
+        SET status = 'pending', 
+            assigned_date = NULL, 
+            assigned_time = NULL, 
+            assigned_schedule_id = NULL,
+            route_sequence = NULL,
+            estimated_arrival_time = NULL,
+            estimated_departure_time = NULL
+        WHERE assigned_date >= $1::date AND assigned_date <= $2::date
+        AND status = 'scheduled'
+      `, [startDate, endDateStr]);
       
       const results = {
         totalRoutes: 0,
@@ -678,8 +698,12 @@ class VanService {
     try {
       if (!externalClient) await client.query('BEGIN');
 
+      console.log(`🏁 Finalizing schedule: ${scheduleId}`);
+
       // Fetch all assignments for this schedule
       const assignments = await this.getScheduleAssignments(scheduleId, client);
+
+      console.log(`📊 Found ${assignments.length} assignments to notify`);
 
       if (assignments.length === 0) {
         throw new AppError('No assignments found for this schedule', 404);
@@ -687,7 +711,6 @@ class VanService {
 
       for (const assignment of assignments) {
         // Prepare variables for the notification template
-        // date format: Thursday, April 9, 2026
         const dateObj = new Date(assignment.assigned_date);
         const variables = {
           user_name: assignment.customer_name,
@@ -699,17 +722,21 @@ class VanService {
             month: 'long',
             day: 'numeric',
           }),
-          time: assignment.assigned_time.substring(0, 5), // '09:30'
+          time: assignment.assigned_time.substring(0, 5),
           request_id: assignment.request_id
         };
 
+        console.log(`🔔 Sending notification to user ${assignment.user_id} for pet ${assignment.pet_name}`);
+
         // Send push notification using the template
-        await notificationService.sendTemplateNotification(
+        const notifResult = await notificationService.sendTemplateNotification(
           assignment.user_id,
           'schedule_confirmation',
           variables,
           'push'
         );
+
+        console.log(`✅ Notification result:`, notifResult ? 'Created' : 'Skipped/Error');
 
         // Update notification_sent_at in service_requests
         await client.query(
@@ -722,7 +749,7 @@ class VanService {
       return { success: true, count: assignments.length };
     } catch (error) {
       if (!externalClient) await client.query('ROLLBACK');
-      console.error('Error finalizing route:', error);
+      console.error('❌ Error finalizing route:', error);
       throw error;
     } finally {
       if (!externalClient) client.release();

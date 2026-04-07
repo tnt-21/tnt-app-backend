@@ -50,6 +50,8 @@ class NotificationService {
       return null;
     }
 
+    console.log(`📝 Inserting notification record for user ${userId}...`);
+
     // Create notification record
     const query = `
       INSERT INTO notifications (
@@ -75,6 +77,7 @@ class NotificationService {
     ]);
 
     const notification = result.rows[0];
+    console.log(`✅ Notification record created: ${notification.notification_id}`);
 
     // Actually send the notification via appropriate channel
     try {
@@ -101,9 +104,11 @@ class NotificationService {
    */
   async sendTemplateNotification(userId, templateCode, variables = {}, deliveryMethod = 'push') {
     // Get template
+    console.log(`🔍 Fetching template: ${templateCode}`);
     const template = await this.getTemplate(templateCode);
 
     if (!template || !template.is_active) {
+      console.log(`❌ Template ${templateCode} not found or inactive`);
       throw new AppError('Notification template not found or inactive', 404, 'TEMPLATE_NOT_FOUND');
     }
 
