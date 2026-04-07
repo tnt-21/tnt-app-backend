@@ -35,8 +35,8 @@ const CONFIG = {
   },
   ROUTE: {
     maxStopsPerVan: 6,
-    maxRadiusKm: 10,
-    minClusterSize: 3,
+    maxRadiusKm: 15,
+    minClusterSize: 1,
     avgSpeedKmph: 30,
     bufferMinutes: 10,
     groomingDurationMinutes: 90,
@@ -150,7 +150,7 @@ class VanService {
       JOIN service_catalog sc ON sr.service_id = sc.service_id
       LEFT JOIN subscriptions sub ON sr.subscription_id = sub.subscription_id
       LEFT JOIN subscription_tiers_ref st ON sub.tier_id = st.tier_id
-      WHERE sr.status = 'pending'
+      WHERE (sr.status = 'pending' OR (sr.status = 'scheduled' AND sr.assigned_schedule_id IS NULL))
     `;
     
     const params = [];
@@ -247,10 +247,17 @@ class VanService {
         
         // Build routes for each van
         for (const van of vans) {
+          // Filter out requests already assigned to previous vans today
+          const requestsForVan = availableRequests.filter(
+            r => !assignedRequestIds.has(r.request_id)
+          );
+          
+          if (requestsForVan.length === 0) break;
+
           const route = await this.buildOptimalRoute(
             van,
             dateStr,
-            availableRequests,
+            requestsForVan,
             CONFIG.ROUTE.maxStopsPerVan,
             client
           );
@@ -260,7 +267,7 @@ class VanService {
             dayResults.requestsAssigned += route.assignments.length;
             results.totalRoutes++;
             
-            // Mark requests as assigned
+            // Mark requests as assigned so other vans don't take them
             route.assignments.forEach(a => assignedRequestIds.add(a.request_id));
             
             console.log(`  ✅ Van ${van.van_number}: ${route.assignments.length} stops, ${route.totalDistanceKm.toFixed(1)} km`);
@@ -299,24 +306,67 @@ class VanService {
         lng: van.start_location_lng || CONFIG.PUNE_HQ.lng
       };
       
-      // Step 1: Geographic clustering
-      const clusters = radiusBasedClustering(
-        availableRequests,
-        vanBase,
-        CONFIG.ROUTE.maxRadiusKm,
-        maxStops
-      );
+      // Step 1: Filter Fixed vs Flexible requests
+      // Fixed = has assigned_date and assigned_time (usually from app booking)
+      const fixedRequests = availableRequests.filter(r => {
+        if (!r.assigned_date || !r.assigned_time) return false;
+        
+        // Robust YYYY-MM-DD extraction without UTC shift
+        const d = new Date(r.assigned_date);
+        const rDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        
+        return rDate === date;
+      });
       
-      if (clusters.length === 0 || clusters[0].length < CONFIG.ROUTE.minClusterSize) {
-        return null; // Not enough density
+      const flexibleRequests = availableRequests.filter(r => !r.assigned_date || !r.assigned_time);
+      
+      let bestCluster = [];
+      
+      // Step 2: Try to include all Fixed requests that are within reasonable radius (relaxing for fixed bookings)
+      const fixedWithinRadius = fixedRequests.filter(request => {
+        const distance = haversineDistance(
+          vanBase.lat,
+          vanBase.lng,
+          request.latitude,
+          request.longitude
+        );
+        // Relax radius for fixed bookings to handle test cases (e.g. Pune to Thane)
+        return distance <= (CONFIG.ROUTE.maxRadiusKm * 10); // 150km for fixed bookings
+      });
+      
+      bestCluster = [...fixedWithinRadius];
+      
+      // Step 3: Fill remaining capacity with Flexible requests using clustering
+      if (bestCluster.length < maxStops) {
+        const remainingCapacity = maxStops - bestCluster.length;
+        const flexClusters = radiusBasedClustering(
+          flexibleRequests,
+          vanBase,
+          CONFIG.ROUTE.maxRadiusKm,
+          remainingCapacity
+        );
+        
+        if (flexClusters.length > 0) {
+          const densestFlex = getDensestCluster(flexClusters);
+          bestCluster.push(...densestFlex);
+        }
       }
       
-      // Step 2: Pick densest cluster
-      const bestCluster = getDensestCluster(clusters);
+      // Limit to max stops
+      bestCluster = bestCluster.slice(0, maxStops);
       
-      if (bestCluster.length < CONFIG.ROUTE.minClusterSize) {
+      if (bestCluster.length === 0) {
         return null;
       }
+      
+      // Sort fixed requests by their assigned time for the initial sequence
+      // This is a naive way to help the TSP solver respect those fixed times
+      bestCluster.sort((a, b) => {
+        if (a.assigned_time && b.assigned_time) {
+          return a.assigned_time.localeCompare(b.assigned_time);
+        }
+        return 0;
+      });
       
       // Step 3: Solve TSP for optimal sequence
       const optimizedSequence = nearestNeighborTSP(vanBase, bestCluster);

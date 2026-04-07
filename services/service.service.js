@@ -479,6 +479,10 @@ class ServiceService {
             address_id,
             subscription_id: subscriptionId,
             service_type: 'grooming',
+            // Pass the app-selected date/time if available
+            assigned_date: booking_date, 
+            assigned_time: booking_time,
+            status: (booking_date && booking_time) ? 'scheduled' : 'pending',
             special_instructions
           }, client);
           console.log(`✅ [VanRouting] Grooming service request created for booking ${booking.booking_id}`);

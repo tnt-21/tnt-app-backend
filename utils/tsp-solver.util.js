@@ -167,8 +167,15 @@ function assignTimeSlots({
       travelTimeMinutes = calculateTravelTime(distance, avgSpeedKmph);
     }
     
-    // Add travel time and buffer
-    currentTime += travelTimeMinutes + bufferMinutes;
+    // If stop has a fixed assigned_time, use it. Otherwise, calculate linearly.
+    if (stop.assigned_time) {
+      const fixedTimeMinutes = timeToMinutes(stop.assigned_time);
+      // Ensure we don't jump backwards, but prioritize the fixed time
+      currentTime = Math.max(currentTime + travelTimeMinutes + bufferMinutes, fixedTimeMinutes);
+    } else {
+      // Add travel time and buffer
+      currentTime += travelTimeMinutes + bufferMinutes;
+    }
     
     const arrivalTime = minutesToTime(currentTime);
     const departureTime = minutesToTime(currentTime + serviceDurationMinutes);
