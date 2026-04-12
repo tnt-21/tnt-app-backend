@@ -2194,7 +2194,7 @@ INSERT INTO app_settings (setting_key, setting_value, setting_type, category, de
 ('support_email', 'support@tailsandtales.com', 'string', 'general', 'Customer support email', true),
 ('support_phone', '+91-1234567890', 'string', 'general', 'Customer support phone', true),
 ('currency', 'INR', 'string', 'payment', 'Default currency', true),
-('tax_percentage', '18.00', 'number', 'payment', 'GST/Tax percentage', false),
+('tax_percentage', '0.00', 'number', 'payment', 'GST/Tax percentage', false),
 ('booking_cancellation_hours', '24', 'number', 'business_rules', 'Hours before booking to allow cancellation', false),
 ('max_reschedule_count', '2', 'number', 'business_rules', 'Maximum reschedule attempts per booking', false),
 ('referral_bonus_amount', '500', 'number', 'business_rules', 'Referral bonus amount', false),
@@ -2291,8 +2291,31 @@ INSERT INTO promo_codes (promo_code, promo_name, description, discount_type, dis
 ('SUMMER2024', 'Summer Sale', 'Hot summer deals', 'percentage', 20.00, 1000.00, 0, 'all', 1000, 1, NOW(), NOW() + INTERVAL '3 months', true)
 ON CONFLICT (promo_code) DO NOTHING;
 
+-- ========================================
+-- MIGRATION 022: PRODUCTS MANAGEMENT
+-- Products catalog with S3 photo support
+-- ========================================
+
+CREATE TABLE IF NOT EXISTS products (
+    product_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    price DECIMAL(10,2) NOT NULL,
+    company_name VARCHAR(255),
+    photo_url VARCHAR(500),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_products_active ON products(is_active);
+CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+
+COMMENT ON TABLE products IS 'Catalog of third-party products';
+
 DO $$
 BEGIN
     RAISE NOTICE 'Initial configuration seeded successfully';
     RAISE NOTICE 'Services: 8, Templates: 5, Promo Codes: 3';
+    RAISE NOTICE 'Migration 022: Products table created successfully';
 END $$;

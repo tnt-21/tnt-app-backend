@@ -613,7 +613,7 @@ class SubscriptionService {
             tax_applicable: true
           }
         ],
-        tax_percentage: 18,
+        tax_percentage: 0,
         discount_amount: parseFloat(pricing.discount_amount),
         due_date: new Date() // Due immediately
       }, client);
@@ -1204,8 +1204,8 @@ class SubscriptionService {
 
     const finalPrice = subtotal - promoDiscount;
 
-    // Calculate tax (18% GST)
-    const taxAmount = finalPrice * 0.18;
+    // Calculate tax (GST removed as per user request)
+    const taxAmount = 0;
     const totalAmount = finalPrice + taxAmount;
 
     return {
@@ -1218,7 +1218,7 @@ class SubscriptionService {
       promo_id: promoId,
       discount_amount: promoDiscount,
       final_price: finalPrice,
-      tax_percentage: 18,
+      tax_percentage: 0,
       tax_amount: taxAmount,
       total_amount: totalAmount
     };

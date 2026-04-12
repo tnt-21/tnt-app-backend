@@ -424,10 +424,17 @@ class ServiceService {
         });
       }
 
-      // Calculate tax (18% GST)
-      const taxableAmount = baseAmount + addonsAmount;
-      const taxAmount = taxableAmount * 0.18;
-      const totalAmount = taxableAmount + taxAmount;
+      // Calculate taxable amount (services + addons + products)
+      let productsAmount = 0;
+      if (products && products.length > 0) {
+        products.forEach(p => {
+          productsAmount += p.price * p.quantity;
+        });
+      }
+
+      const subtotalAmount = baseAmount + addonsAmount + productsAmount;
+      const taxAmount = 0; // GST removed as per user request
+      const totalAmount = subtotalAmount + taxAmount;
 
       // Generate booking number
       const bookingNumber = `BK${Date.now()}${Math.floor(Math.random() * 1000)}`;
@@ -451,8 +458,9 @@ class ServiceService {
           booking_number, user_id, pet_id, service_id, subscription_id,
           booking_date, booking_time, estimated_duration, location_type_id, address_id,
           status_id, is_subscription_service, base_amount, addons_amount,
-          tax_amount, total_amount, special_instructions, payment_status
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          tax_amount, total_amount, special_instructions, payment_status,
+          products_amount
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
         RETURNING *
       `;
 
@@ -461,7 +469,8 @@ class ServiceService {
         booking_date, booking_time, duration, location_type_id, address_id || null,
         statusId, isSubscriptionService, baseAmount, addonsAmount,
         taxAmount, totalAmount, special_instructions || null,
-        isSubscriptionService ? 'paid' : 'pending'
+        isSubscriptionService ? 'paid' : 'pending',
+        productsAmount
       ]);
 
       const booking = bookingResult.rows[0];
@@ -538,13 +547,26 @@ class ServiceService {
         });
       }
 
+      // Add products as line items
+      if (products && products.length > 0) {
+        products.forEach(product => {
+          lineItems.push({
+            item_type: 'product',
+            description: product.name,
+            quantity: product.quantity,
+            unit_price: parseFloat(product.price),
+            tax_applicable: false
+          });
+        });
+      }
+
       // Create invoice
       await paymentService.createInvoice({
         user_id: userId,
         booking_id: booking.booking_id,
         invoice_type: 'service',
         line_items: lineItems,
-        tax_percentage: 18,
+        tax_percentage: 0,
         discount_amount: 0,
         due_date: new Date() // Due immediately
       }, client);
@@ -570,7 +592,23 @@ class ServiceService {
         }
       }
 
-      // Deduct subscription quota if applicable
+      // Insert products
+      if (products && products.length > 0) {
+        for (const product of products) {
+          await client.query(
+            `INSERT INTO booking_products (
+              booking_id, product_id, quantity, unit_price, total_price
+            ) VALUES ($1, $2, $3, $4, $5)`,
+            [
+              booking.booking_id,
+              product.product_id,
+              product.quantity,
+              product.price,
+              product.price * product.quantity
+            ]
+          );
+        }
+      }
       if (isSubscriptionService && subscriptionId) {
         await client.query(
           `UPDATE subscription_entitlements 
@@ -755,6 +793,16 @@ class ServiceService {
     `;
     const addonsResult = await pool.query(addonsQuery, [bookingId]);
     booking.addons = addonsResult.rows;
+
+    // Get products
+    const productsQuery = `
+      SELECT bp.*, p.name, p.photo_url, p.company_name
+      FROM booking_products bp
+      JOIN products p ON bp.product_id = p.product_id
+      WHERE bp.booking_id = $1
+    `;
+    const productsResult = await pool.query(productsQuery, [bookingId]);
+    booking.products = productsResult.rows;
 
     return booking;
   }
@@ -1041,7 +1089,7 @@ class ServiceService {
   }
 
   async calculateBookingPrice(data) {
-    const { service_id, pet_id, userId, addons = [], promo_code } = data;
+    const { service_id, pet_id, userId, addons = [], products = [], promo_code } = data;
 
     // Get eligibility
     const eligibility = await this.checkServiceEligibility(service_id, pet_id, userId);
@@ -1050,13 +1098,21 @@ class ServiceService {
       throw new AppError(eligibility.reason, 400, 'SERVICE_NOT_ELIGIBLE');
     }
 
-    let baseAmount = eligibility.pricing.discounted_price;
+    let baseAmount = eligibility.pricing.is_free ? 0 : eligibility.pricing.discounted_price;
     let addonsAmount = 0;
+    let productsAmount = 0;
 
     // Calculate addons
     if (addons && addons.length > 0) {
       addons.forEach(addon => {
         addonsAmount += addon.unit_price * addon.quantity;
+      });
+    }
+
+    // Calculate products
+    if (products && products.length > 0) {
+      products.forEach(product => {
+        productsAmount += product.price * product.quantity;
       });
     }
 
@@ -1081,7 +1137,7 @@ class ServiceService {
 
         // Check if applicable to services
         if (promo.applicable_to === 'service' || promo.applicable_to === 'all') {
-          const subtotal = baseAmount + addonsAmount;
+          const subtotal = baseAmount + addonsAmount + productsAmount;
 
           if (promo.discount_type === 'percentage') {
             promoDiscount = subtotal * (promo.discount_value / 100);
@@ -1103,14 +1159,15 @@ class ServiceService {
       }
     }
 
-    const subtotal = baseAmount + addonsAmount;
+    const subtotal = baseAmount + addonsAmount + productsAmount;
     const discountedSubtotal = subtotal - promoDiscount;
-    const taxAmount = discountedSubtotal * 0.18; // 18% GST
+    const taxAmount = 0; // 0% GST as per user request
     const totalAmount = discountedSubtotal + taxAmount;
 
     return {
       base_amount: parseFloat(baseAmount.toFixed(2)),
       addons_amount: parseFloat(addonsAmount.toFixed(2)),
+      products_amount: parseFloat(productsAmount.toFixed(2)),
       subtotal: parseFloat(subtotal.toFixed(2)),
       promo_discount: parseFloat(promoDiscount.toFixed(2)),
       promo_details: promoDetails,
@@ -1118,7 +1175,8 @@ class ServiceService {
       tax_amount: parseFloat(taxAmount.toFixed(2)),
       total_amount: parseFloat(totalAmount.toFixed(2)),
       is_free: eligibility.pricing.is_free,
-      addons_breakdown: addons
+      addons_breakdown: addons,
+      products_breakdown: products
     };
   }
 

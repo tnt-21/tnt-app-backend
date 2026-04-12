@@ -297,7 +297,7 @@ class PaymentService {
         0
       );
 
-      const taxAmount = (subtotal * (invoiceData.tax_percentage || 18)) / 100;
+      const taxAmount = (subtotal * (invoiceData.tax_percentage || 0)) / 100;
       const discountAmount = invoiceData.discount_amount || 0;
       const totalAmount = subtotal + taxAmount - discountAmount;
 
@@ -320,7 +320,7 @@ class PaymentService {
         invoiceNumber,
         invoiceData.invoice_type,
         subtotal,
-        invoiceData.tax_percentage || 18,
+        invoiceData.tax_percentage || 0,
         taxAmount,
         invoiceData.discount_percentage || 0,
         discountAmount,

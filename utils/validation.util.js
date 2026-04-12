@@ -745,7 +745,7 @@ const createInvoiceSchema = Joi.object({
     .min(0)
     .max(100)
     .precision(2)
-    .default(18)
+    .default(0)
     .messages({
       "number.min": "Tax percentage cannot be negative",
       "number.max": "Tax percentage cannot exceed 100",
