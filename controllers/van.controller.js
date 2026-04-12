@@ -1,119 +1,87 @@
 // ============================================
 // FILE: controllers/van.controller.js
 // Van routing and scheduling controller
+// Zone-based system
 // ============================================
 
 const vanService = require('../services/van.service');
 const ResponseUtil = require('../utils/response.util');
 
 class VanController {
-  
+
   // ============================================
-  // SERVICE REQUEST ENDPOINTS
+  // ZONE CAPACITY
   // ============================================
-  
-  async createServiceRequest(req, res, next) {
+
+  /**
+   * GET /van/zone-capacity
+   * Returns slots available per zone per upcoming day.
+   */
+  async getZoneCapacity(req, res, next) {
     try {
-      const request = await vanService.createServiceRequest(req.body);
+      const weeksAhead = parseInt(req.query.weeks_ahead) || 4;
+      const capacity = await vanService.getZoneCapacity(weeksAhead);
+      return ResponseUtil.success(res, capacity, 'Zone capacity retrieved successfully');
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // CANCELLATION WORKFLOW (Admin)
+  // ============================================
+
+  /**
+   * GET /van/pending-cancellations
+   * Admin: list all bookings with pending_admin_approval cancellations.
+   */
+  async getPendingCancellations(req, res, next) {
+    try {
+      const cancellations = await vanService.getPendingCancellations();
       return ResponseUtil.success(
         res,
-        request,
-        'Service request created successfully. We\'ll confirm your time slot within 24 hours!',
-        201
+        { cancellations, count: cancellations.length },
+        'Pending cancellations retrieved'
       );
     } catch (error) {
       next(error);
     }
   }
 
-  async getPendingRequests(req, res, next) {
+  /**
+   * POST /van/bookings/:booking_id/approve-cancellation
+   * Admin: approve the cancellation → frees slot, triggers refill.
+   */
+  async approveCancellation(req, res, next) {
     try {
-      const { minUrgency, serviceType, priority } = req.query;
-      const requests = await vanService.getPendingRequests({
-        minUrgency: minUrgency ? parseFloat(minUrgency) : undefined,
-        serviceType,
-        priority: priority ? parseInt(priority) : undefined
-      });
-      return ResponseUtil.success(res, { requests, count: requests.length }, 'Pending requests retrieved successfully');
+      const { booking_id } = req.params;
+      const { admin_note } = req.body;
+      const result = await vanService.approveCancellation(booking_id, admin_note);
+      return ResponseUtil.success(res, result, 'Booking cancellation approved. Slot freed and waitlist checked.');
     } catch (error) {
       next(error);
     }
   }
 
-  async respondToTimeSlot(req, res, next) {
+  /**
+   * POST /van/bookings/:booking_id/reject-cancellation
+   * Admin: reject the cancellation → booking restored.
+   */
+  async rejectCancellation(req, res, next) {
     try {
-      const { request_id } = req.params;
-      const { action } = req.body; // 'accepted' or 'rejected'
-      
-      const result = await vanService.handleCustomerResponse(request_id, action);
-      
-      const message = action === 'accepted' 
-        ? 'Time slot confirmed! Your booking has been created.'
-        : 'Time slot rejected. We\'ll find you another slot soon.';
-      
-      return ResponseUtil.success(res, result, message);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // ============================================
-  // ROUTE OPTIMIZATION ENDPOINTS
-  // ============================================
-
-  async generateWeeklyRoutes(req, res, next) {
-    try {
-      const { start_date, days_ahead } = req.body;
-      const startDate = start_date || new Date().toISOString().split('T')[0];
-      const daysAhead = days_ahead || 7;
-      
-      const results = await vanService.generateWeeklyRoutes(startDate, daysAhead);
-      
-      return ResponseUtil.success(
-        res,
-        results,
-        `Routes generated successfully! ${results.totalRoutes} routes created, ${results.totalRequestsAssigned} requests assigned.`
-      );
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async buildRouteForVan(req, res, next) {
-    try {
-      const { van_id, date } = req.body;
-      
-      // Get van details
-      const vans = await vanService.getVans();
-      const van = vans.find(v => v.van_id === van_id);
-      if (!van) {
-        return ResponseUtil.error(res, 'Van not found', 404);
-      }
-      
-      // Get pending requests
-      const pendingRequests = await vanService.getPendingRequests();
-      
-      // Build route
-      const route = await vanService.buildOptimalRoute(van, date, pendingRequests);
-      
-      if (!route) {
-        return ResponseUtil.success(res, null, 'Not enough requests to build a route for this van/date');
-      }
-      
-      return ResponseUtil.success(
-        res,
-        route,
-        `Route built successfully! ${route.assignments.length} stops, ${route.totalDistanceKm.toFixed(1)} km`
-      );
+      const { booking_id } = req.params;
+      const { admin_note } = req.body;
+      const result = await vanService.rejectCancellation(booking_id, admin_note);
+      return ResponseUtil.success(res, result, 'Booking cancellation rejected. Booking has been restored.');
     } catch (error) {
       next(error);
     }
   }
 
   // ============================================
-  // VAN MANAGEMENT ENDPOINTS
+  // VAN MANAGEMENT
   // ============================================
-  
+
   async createVan(req, res, next) {
     try {
       const van = await vanService.createVan(req.body);
@@ -148,16 +116,6 @@ class VanController {
       const { schedule_id } = req.params;
       const assignments = await vanService.getScheduleAssignments(schedule_id);
       return ResponseUtil.success(res, { assignments }, 'Schedule assignments retrieved successfully');
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  async finalizeRoute(req, res, next) {
-    try {
-      const { schedule_id } = req.params;
-      const result = await vanService.finalizeRoute(schedule_id);
-      return ResponseUtil.success(res, result, `Route finalized successfully! Notifications sent to ${result.count} customers.`);
     } catch (error) {
       next(error);
     }

@@ -1,6 +1,6 @@
 // ============================================
 // FILE: routes/van.routes.js
-// Van routing and scheduling routes
+// Van zone-based scheduling routes
 // ============================================
 
 const express = require('express');
@@ -9,45 +9,32 @@ const vanController = require('../controllers/van.controller');
 const { authenticate } = require('../middlewares/auth.middleware');
 
 // ============================================
-// SERVICE REQUEST ROUTES
+// ZONE CAPACITY (Admin / Public)
 // ============================================
 
-// Create service request (customer submits without date)
-router.post('/service-requests', authenticate, vanController.createServiceRequest);
-
-// Get pending requests (admin view)
-router.get('/service-requests/pending', authenticate, vanController.getPendingRequests);
-
-// Customer responds to assigned time slot
-router.post('/service-requests/:request_id/respond', authenticate, vanController.respondToTimeSlot);
+// Get upcoming slot availability per zone
+router.get('/zone-capacity', authenticate, vanController.getZoneCapacity);
 
 // ============================================
-// ROUTE OPTIMIZATION ROUTES
+// CANCELLATION WORKFLOW (Admin)
 // ============================================
 
-// Generate weekly routes for all vans
-router.post('/generate-weekly-routes', authenticate, vanController.generateWeeklyRoutes);
+// List all pending cancellation requests
+router.get('/pending-cancellations', authenticate, vanController.getPendingCancellations);
 
-// Build route for specific van and date
-router.post('/build-route', authenticate, vanController.buildRouteForVan);
+// Admin: approve a user's cancellation request
+router.post('/bookings/:booking_id/approve-cancellation', authenticate, vanController.approveCancellation);
+
+// Admin: reject a user's cancellation request (booking restored)
+router.post('/bookings/:booking_id/reject-cancellation', authenticate, vanController.rejectCancellation);
 
 // ============================================
-// VAN MANAGEMENT ROUTES
+// VAN MANAGEMENT
 // ============================================
 
-// Create new van
 router.post('/', authenticate, vanController.createVan);
-
-// Get all vans (optionally filtered by date)
 router.get('/', authenticate, vanController.getVans);
-
-// Create/update van schedule
 router.post('/schedules', authenticate, vanController.createSchedule);
-
-// Get assignments for a schedule
 router.get('/schedules/:schedule_id/assignments', authenticate, vanController.getScheduleAssignments);
-
-// Finalize route and notify customers
-router.post('/schedules/:schedule_id/finalize', authenticate, vanController.finalizeRoute);
 
 module.exports = router;

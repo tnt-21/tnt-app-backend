@@ -8,6 +8,7 @@ const { AppError } = require('../utils/response.util');
 const { v4: uuidv4 } = require('uuid');
 const paymentService = require('./payment.service');
 const attachmentService = require('./attachment.service');
+const vanService = require('./van.service'); // Zone-based scheduling
 
 class ServiceService {
   // ==================== SERVICE CATALOG ====================
@@ -477,27 +478,19 @@ class ServiceService {
       const booking = bookingResult.rows[0];
       
       // --- VAN ROUTING INTEGRATION ---
-      // For Grooming category (1), always create a service_request for the optimizer
+      // For Grooming category (1), assign to zone-based schedule automatically
       const categoryCheck = await client.query('SELECT category_id FROM service_catalog WHERE service_id = $1', [service_id]);
       if (categoryCheck.rows.length > 0 && parseInt(categoryCheck.rows[0].category_id) === 1) {
         try {
-          const vanService = require('./van.service');
-          await vanService.createServiceRequest({
-            user_id: userId,
-            pet_id,
-            service_id,
-            address_id,
-            subscription_id: subscriptionId,
-            service_type: 'grooming',
-            // Pass the app-selected date/time if available
-            assigned_date: booking_date, 
-            assigned_time: booking_time,
-            status: (booking_date && booking_time) ? 'scheduled' : 'pending',
-            special_instructions
-          }, client);
-          console.log(`✅ [VanRouting] Grooming service request created for booking ${booking.booking_id}`);
-        } catch (vanError) {
-          console.error('⚠️ [VanRouting] Failed to create service request:', vanError);
+          const zoneResult = await vanService.assignBookingToZoneSlot(address_id, booking.booking_id);
+          if (zoneResult) {
+            console.log(`✅ [ZoneScheduling] Booking ${booking.booking_id} → Zone ${zoneResult.zone} on ${zoneResult.date} at ${zoneResult.time}`);
+          } else {
+            console.log(`ℹ️  [ZoneScheduling] Address not in any zone — booking left without a zone assignment`);
+          }
+        } catch (zoneError) {
+          console.error('⚠️  [ZoneScheduling] Zone assignment failed (non-fatal):', zoneError.message);
+          // Non-fatal: booking still created, admin can reschedule manually
         }
       }
 
@@ -809,86 +802,13 @@ class ServiceService {
   }
 
   async cancelBooking(bookingId, userId, reason) {
-    const client = await pool.connect();
-
-    try {
-      await client.query('BEGIN');
-
-      // Get booking
-      const booking = await this.getBookingById(bookingId, userId);
-
-      // Check if already cancelled
-      if (booking.status_code === 'cancelled') {
-        throw new AppError('Booking already cancelled', 400, 'ALREADY_CANCELLED');
-      }
-
-      // Check if completed
-      if (booking.status_code === 'completed') {
-        throw new AppError('Cannot cancel completed booking', 400, 'CANNOT_CANCEL_COMPLETED');
-      }
-
-      // Calculate refund based on cancellation time
-      const bookingDateTime = new Date(`${booking.booking_date}T${booking.booking_time}`);
-      const hoursUntilBooking = (bookingDateTime - new Date()) / (1000 * 60 * 60);
-
-      let refundPercentage = 0;
-      if (hoursUntilBooking >= 24) {
-        refundPercentage = 100;
-      } else if (hoursUntilBooking >= 12) {
-        refundPercentage = 50;
-      }
-
-      // Get cancelled status ID
-      const statusResult = await client.query(
-        "SELECT status_id FROM booking_statuses_ref WHERE status_code = 'cancelled'"
-      );
-      const cancelledStatusId = statusResult.rows[0].status_id;
-
-      // Update booking
-      await client.query(
-        `UPDATE bookings 
-         SET status_id = $1, 
-             cancellation_reason = $2,
-             cancelled_by = $3,
-             cancelled_at = NOW()
-         WHERE booking_id = $4`,
-        [cancelledStatusId, reason, userId, bookingId]
-      );
-
-      // Add to history
-      await client.query(
-        `INSERT INTO booking_status_history (
-          booking_id, old_status_id, new_status_id, changed_by, changed_by_role, reason
-        ) VALUES ($1, $2, $3, $4, 'customer', $5)`,
-        [bookingId, booking.status_id, cancelledStatusId, userId, reason]
-      );
-
-      // Restore subscription quota if applicable
-      if (booking.is_subscription_service && booking.subscription_id) {
-        await client.query(
-          `UPDATE subscription_entitlements 
-           SET quota_used = quota_used - 1,
-               quota_remaining = quota_remaining + 1
-           WHERE subscription_id = $1 
-             AND category_id = $2`,
-          [booking.subscription_id, booking.category_id]
-        );
-      }
-
-      await client.query('COMMIT');
-
-      return {
-        booking_id: bookingId,
-        status: 'cancelled',
-        refund_percentage: refundPercentage,
-        refund_amount: (booking.total_amount * refundPercentage / 100).toFixed(2)
-      };
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+    // Cancel goes through admin approval — user submits, admin approves/rejects
+    if (!reason || reason.trim().length < 3) {
+      throw new AppError('A reason for cancellation is required (minimum 3 characters)', 400, 'REASON_REQUIRED');
     }
+
+    const result = await vanService.requestCancellation(bookingId, userId, reason);
+    return result;
   }
 
   async rescheduleBooking(bookingId, userId, newDate, newTime, reason) {
