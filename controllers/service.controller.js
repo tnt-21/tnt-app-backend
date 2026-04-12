@@ -323,7 +323,7 @@ class ServiceController {
 
   async calculateBookingPrice(req, res, next) {
     try {
-      const { service_id, pet_id, addons, promo_code } = req.body;
+      const { service_id, pet_id, addons, products, promo_code } = req.body;
       const userId = req.user.user_id;
 
       const pricing = await serviceService.calculateBookingPrice({
@@ -331,6 +331,7 @@ class ServiceController {
         pet_id,
         userId,
         addons,
+        products,
         promo_code
       });
 

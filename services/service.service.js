@@ -335,6 +335,7 @@ class ServiceService {
       location_type_id,
       address_id,
       addons = [],
+      products = [],
       special_instructions,
       use_subscription = false
     } = bookingData;
