@@ -868,6 +868,17 @@ const createBookingSchema = Joi.object({
       })
     )
     .optional(),
+
+  products: Joi.array()
+    .items(
+      Joi.object({
+        product_id: Joi.string().required(),
+        price: Joi.number().positive().required(),
+        name: Joi.string().max(255).required(),
+        quantity: Joi.number().integer().min(1).default(1),
+      })
+    )
+    .optional(),
 });
 
 const cancelBookingSchema = Joi.object({
@@ -920,6 +931,17 @@ const calculateBookingPriceSchema = Joi.object({
         addon_name: Joi.string().max(255).required(),
         addon_description: Joi.string().max(500).allow("", null).optional(),
         unit_price: Joi.number().positive().required(),
+        quantity: Joi.number().integer().min(1).default(1),
+      })
+    )
+    .optional(),
+
+  products: Joi.array()
+    .items(
+      Joi.object({
+        product_id: Joi.string().required(),
+        price: Joi.number().positive().required(),
+        name: Joi.string().max(255).required(),
         quantity: Joi.number().integer().min(1).default(1),
       })
     )
