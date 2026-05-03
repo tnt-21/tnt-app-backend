@@ -8,7 +8,7 @@ const { AppError } = require('../utils/response.util');
 const { v4: uuidv4 } = require('uuid');
 const paymentService = require('./payment.service');
 const attachmentService = require('./attachment.service');
-const vanService = require('./van.service'); // Zone-based scheduling
+const clusterService = require('./cluster.service'); // Zone-based clustering
 
 class ServiceService {
   // ==================== SERVICE CATALOG ====================
@@ -477,20 +477,20 @@ class ServiceService {
 
       const booking = bookingResult.rows[0];
       
-      // --- VAN ROUTING INTEGRATION ---
-      // For Grooming category (1), assign to zone-based schedule automatically
+      // --- ZONE CLUSTERING INTEGRATION ---
+      // For Grooming category (1), assign zone for future clustering
       const categoryCheck = await client.query('SELECT category_id FROM service_catalog WHERE service_id = $1', [service_id]);
       if (categoryCheck.rows.length > 0 && parseInt(categoryCheck.rows[0].category_id) === 1) {
         try {
-          const zoneResult = await vanService.assignBookingToZoneSlot(address_id, booking.booking_id);
-          if (zoneResult) {
-            console.log(`✅ [ZoneScheduling] Booking ${booking.booking_id} → Zone ${zoneResult.zone} on ${zoneResult.date} at ${zoneResult.time}`);
+          const zone = await clusterService.getZoneForAddress(address_id);
+          if (zone) {
+            await client.query(`UPDATE bookings SET zone = $1 WHERE booking_id = $2`, [zone, booking.booking_id]);
+            console.log(`✅ [ZoneClustering] Booking ${booking.booking_id} assigned to Zone ${zone}`);
           } else {
-            console.log(`ℹ️  [ZoneScheduling] Address not in any zone — booking left without a zone assignment`);
+            console.log(`ℹ️  [ZoneClustering] Address not in any zone — booking left without a zone assignment`);
           }
         } catch (zoneError) {
-          console.error('⚠️  [ZoneScheduling] Zone assignment failed (non-fatal):', zoneError.message);
-          // Non-fatal: booking still created, admin can reschedule manually
+          console.error('⚠️  [ZoneClustering] Zone assignment failed (non-fatal):', zoneError.message);
         }
       }
 
@@ -807,8 +807,18 @@ class ServiceService {
       throw new AppError('A reason for cancellation is required (minimum 3 characters)', 400, 'REASON_REQUIRED');
     }
 
-    const result = await vanService.requestCancellation(bookingId, userId, reason);
-    return result;
+    // TODO: proper cancellation logic if part of a cluster
+    await pool.query(
+      `UPDATE bookings
+       SET cancellation_status = 'pending_admin_approval',
+           cancellation_reason = $1,
+           cancelled_by_user_at = NOW(),
+           updated_at = NOW()
+       WHERE booking_id = $2`,
+      [reason, bookingId]
+    );
+
+    return { success: true, status: 'pending_admin_approval', message: 'Your cancellation request has been submitted.' };
   }
 
   async rescheduleBooking(bookingId, userId, newDate, newTime, reason) {

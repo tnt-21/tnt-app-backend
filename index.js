@@ -32,7 +32,7 @@ const analyticsRoutes = require('./routes/v1/analytics.routes');
 const uploadRoutes = require('./routes/v1/upload.routes'); // Import upload routes
 const auditRoutes = require('./routes/v1/audit.routes'); // Import audit routes
 const productRoutes = require('./routes/v1/product.routes'); // Import product routes
-const vanRoutes = require('./routes/van.routes'); // Import van routes
+const clusterRoutes = require('./routes/v1/cluster.routes'); // Import cluster routes
 const seedRoutes = require('./routes/seed.routes'); // Temporary seed routes
 
 // Import cron jobs
@@ -148,7 +148,7 @@ app.use(`/api/${API_VERSION}/analytics`, analyticsRoutes);
 app.use(`/api/${API_VERSION}/upload`, uploadRoutes); // Mount upload routes
 app.use(`/api/${API_VERSION}/audit`, auditRoutes); // Mount audit routes
 app.use(`/api/${API_VERSION}/products`, productRoutes); // Mount product routes
-app.use(`/api/${API_VERSION}/vans`, vanRoutes); // Mount van routes
+app.use(`/api/${API_VERSION}/clusters`, clusterRoutes); // Mount cluster routes
 app.use(`/api/${API_VERSION}/seed`, seedRoutes); // Temporary seed endpoint
 
 // 404 Handler

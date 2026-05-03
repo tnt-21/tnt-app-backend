@@ -5,8 +5,8 @@
 
 const express = require('express');
 const router = express.Router();
-const vanController = require('../controllers/van.controller');
-const { authenticate } = require('../middlewares/auth.middleware');
+const vanController = require('../../controllers/van.controller');
+const { authenticate } = require('../../middlewares/auth.middleware');
 
 // ============================================
 // ZONE CAPACITY (Admin / Public)
