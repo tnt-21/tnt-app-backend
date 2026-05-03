@@ -624,10 +624,13 @@ class ServiceService {
       // Insert addons
       if (addons && addons.length > 0) {
         for (const addon of addons) {
-          let price = addon.unit_price;
-          let name = addon.addon_name;
-          if (addon.addon_id) {
-            const addonDb = await client.query('SELECT name, price FROM addon_services WHERE addon_id = $1', [addon.addon_id]);
+          let addonId = typeof addon === 'object' ? addon.addon_id : addon;
+          let price = typeof addon === 'object' ? addon.unit_price : 0;
+          let name = typeof addon === 'object' ? addon.addon_name : 'Add-on';
+          let qty = typeof addon === 'object' ? (addon.quantity || 1) : 1;
+
+          if (addonId) {
+            const addonDb = await client.query('SELECT name, price FROM addon_services WHERE addon_id = $1', [addonId]);
             if (addonDb.rows.length > 0) {
               price = parseFloat(addonDb.rows[0].price);
               name = addonDb.rows[0].name;
@@ -640,12 +643,12 @@ class ServiceService {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [
               booking.booking_id,
-              addon.addon_type || 'service',
+              (typeof addon === 'object' ? addon.addon_type : null) || 'service',
               name,
-              addon.addon_description || null,
+              (typeof addon === 'object' ? addon.addon_description : null) || null,
               price,
-              addon.quantity || 1,
-              price * (addon.quantity || 1)
+              qty,
+              price * qty
             ]
           );
         }
@@ -1100,15 +1103,18 @@ class ServiceService {
 
     // Calculate addons
     if (addons && addons.length > 0) {
-      for (const addon of addons) {
-        let price = addon.unit_price;
-        if (addon.addon_id) {
-          const addonResult = await pool.query('SELECT price FROM addon_services WHERE addon_id = $1', [addon.addon_id]);
+      for (let addon of addons) {
+        let addonId = typeof addon === 'object' ? addon.addon_id : addon;
+        let price = typeof addon === 'object' ? addon.unit_price : 0;
+        let qty = typeof addon === 'object' ? (addon.quantity || 1) : 1;
+
+        if (addonId) {
+          const addonResult = await pool.query('SELECT price FROM addon_services WHERE addon_id = $1', [addonId]);
           if (addonResult.rows.length > 0) {
             price = parseFloat(addonResult.rows[0].price);
           }
         }
-        addonsAmount += price * (addon.quantity || 1);
+        addonsAmount += price * qty;
       }
     }
 
