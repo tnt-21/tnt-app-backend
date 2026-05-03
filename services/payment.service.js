@@ -564,6 +564,47 @@ class PaymentService {
     };
   }
 
+  async createRazorpaySubscription(subscriptionData) {
+    const Razorpay = require('razorpay');
+    const razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET
+    });
+
+    // 1. Create or get Plan
+    const planName = `${subscriptionData.tier_name} - ${subscriptionData.cycle_name}`;
+    const amountInPaise = Math.round((subscriptionData.final_price / (subscriptionData.total_installments || 1)) * 100);
+
+    const plan = await razorpay.plans.create({
+      period: subscriptionData.interval === 4 ? 'month' : 'month',
+      interval: subscriptionData.interval || 1,
+      item: {
+        name: planName,
+        amount: amountInPaise,
+        currency: 'INR',
+        description: `Subscription for ${subscriptionData.pet_name}`
+      }
+    });
+
+    // 2. Create Subscription
+    const subscription = await razorpay.subscriptions.create({
+      plan_id: plan.id,
+      total_count: subscriptionData.total_installments || 12,
+      quantity: 1,
+      customer_notify: 1,
+      notes: {
+        subscription_id: subscriptionData.subscription_id,
+        user_id: subscriptionData.user_id
+      }
+    });
+
+    return {
+      gateway_subscription_id: subscription.id,
+      short_url: subscription.short_url,
+      status: subscription.status
+    };
+  }
+
   async _processStripePayment(invoice, paymentMethod, paymentData) {
     // Stripe integration placeholder
     throw new AppError('Stripe integration not implemented', 501, 'NOT_IMPLEMENTED');

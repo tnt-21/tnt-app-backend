@@ -9,6 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 const paymentService = require('./payment.service');
 const attachmentService = require('./attachment.service');
 const clusterService = require('./cluster.service'); // Zone-based clustering
+const { haversineDistance } = require('../utils/clustering.util');
 
 class ServiceService {
   // ==================== SERVICE CATALOG ====================
@@ -401,10 +402,14 @@ class ServiceService {
       // Check if using subscription
       if (use_subscription && eligibility.pricing.is_free) {
         const subQuery = await client.query(
-          `SELECT s.*, se.*
+          `SELECT s.*, se.*, stc.quota_monthly as tier_quota_monthly
            FROM subscriptions s
            LEFT JOIN subscription_entitlements se ON s.subscription_id = se.subscription_id
            LEFT JOIN service_catalog sc ON sc.category_id = se.category_id
+           LEFT JOIN subscription_tiers_config stc ON s.tier_id = stc.tier_id 
+             AND stc.category_id = se.category_id 
+             AND stc.species_id = (SELECT species_id FROM pets WHERE pet_id = $1)
+             AND stc.life_stage_id = (SELECT life_stage_id FROM pets WHERE pet_id = $1)
            WHERE s.pet_id = $1 
              AND s.status = 'active'
              AND sc.service_id = $2
@@ -413,9 +418,31 @@ class ServiceService {
         );
 
         if (subQuery.rows.length > 0) {
-          baseAmount = 0;
-          isSubscriptionService = true;
-          subscriptionId = subQuery.rows[0].subscription_id;
+          const sub = subQuery.rows[0];
+          
+          // Check monthly quota if it's Boarding (Category 4)
+          let isMonthlyQuotaExceeded = false;
+          if (parseInt(sub.category_id) === 4 && sub.tier_quota_monthly) {
+            const monthlyBookingsResult = await client.query(
+              `SELECT COUNT(*) FROM bookings 
+               WHERE pet_id = $1 AND subscription_id = $2 
+                 AND is_subscription_service = true
+                 AND EXTRACT(MONTH FROM booking_date) = EXTRACT(MONTH FROM CURRENT_DATE)
+                 AND EXTRACT(YEAR FROM booking_date) = EXTRACT(YEAR FROM CURRENT_DATE)
+                 AND status_id NOT IN (SELECT status_id FROM booking_statuses_ref WHERE status_code = 'cancelled')`,
+              [pet_id, sub.subscription_id]
+            );
+            const monthlyCount = parseInt(monthlyBookingsResult.rows[0].count);
+            if (monthlyCount >= sub.tier_quota_monthly) {
+              isMonthlyQuotaExceeded = true;
+            }
+          }
+
+          if (!isMonthlyQuotaExceeded) {
+            baseAmount = 0;
+            isSubscriptionService = true;
+            subscriptionId = sub.subscription_id;
+          }
         }
       }
 
@@ -434,7 +461,36 @@ class ServiceService {
         });
       }
 
-      const subtotalAmount = baseAmount + addonsAmount + productsAmount;
+      // --- BOARDING TRAVEL FEE LOGIC ---
+      let travelFee = 0;
+      const categoryResult = await client.query('SELECT category_id FROM service_catalog WHERE service_id = $1', [service_id]);
+      const categoryId = categoryResult.rows[0].category_id;
+
+      if (categoryId === 4) { // Boarding Category
+        const settingsResult = await client.query("SELECT setting_key, setting_value FROM app_settings WHERE category = 'boarding'");
+        const settings = {};
+        settingsResult.rows.forEach(r => settings[r.setting_key] = r.setting_value);
+
+        if (address_id) {
+          const addressResult = await client.query('SELECT latitude, longitude FROM user_addresses WHERE address_id = $1', [address_id]);
+          if (addressResult.rows.length > 0) {
+            const userLat = parseFloat(addressResult.rows[0].latitude);
+            const userLng = parseFloat(addressResult.rows[0].longitude);
+            const adminLat = parseFloat(settings.boarding_admin_lat || 18.5204);
+            const adminLng = parseFloat(settings.boarding_admin_lng || 73.8567);
+            const costPerKm = parseFloat(settings.boarding_cost_per_km || 100);
+
+            const distance = haversineDistance(userLat, userLng, adminLat, adminLng);
+            
+            // Only charge travel fee if NOT a subscriber or if we decide to charge it for all (user says "charge travelling fee only for non subs")
+            if (!isSubscriptionService) {
+              travelFee = distance * costPerKm;
+            }
+          }
+        }
+      }
+
+      const subtotalAmount = baseAmount + addonsAmount + productsAmount + travelFee;
       const taxAmount = 0; // GST removed as per user request
       const totalAmount = subtotalAmount + taxAmount;
 
@@ -461,8 +517,8 @@ class ServiceService {
           booking_date, booking_time, estimated_duration, location_type_id, address_id,
           status_id, is_subscription_service, base_amount, addons_amount,
           tax_amount, total_amount, special_instructions, payment_status,
-          products_amount
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+          products_amount, travel_fee
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
         RETURNING *
       `;
 
@@ -472,7 +528,7 @@ class ServiceService {
         statusId, isSubscriptionService, baseAmount, addonsAmount,
         taxAmount, totalAmount, special_instructions || null,
         isSubscriptionService ? 'paid' : 'pending',
-        productsAmount
+        productsAmount, travelFee
       ]);
 
       const booking = bookingResult.rows[0];
@@ -568,6 +624,15 @@ class ServiceService {
       // Insert addons
       if (addons && addons.length > 0) {
         for (const addon of addons) {
+          let price = addon.unit_price;
+          let name = addon.addon_name;
+          if (addon.addon_id) {
+            const addonDb = await client.query('SELECT name, price FROM addon_services WHERE addon_id = $1', [addon.addon_id]);
+            if (addonDb.rows.length > 0) {
+              price = parseFloat(addonDb.rows[0].price);
+              name = addonDb.rows[0].name;
+            }
+          }
           await client.query(
             `INSERT INTO booking_addons (
               booking_id, addon_type, addon_name, addon_description,
@@ -575,12 +640,12 @@ class ServiceService {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
             [
               booking.booking_id,
-              addon.addon_type,
-              addon.addon_name,
+              addon.addon_type || 'service',
+              name,
               addon.addon_description || null,
-              addon.unit_price,
-              addon.quantity,
-              addon.unit_price * addon.quantity
+              price,
+              addon.quantity || 1,
+              price * (addon.quantity || 1)
             ]
           );
         }
@@ -1035,9 +1100,16 @@ class ServiceService {
 
     // Calculate addons
     if (addons && addons.length > 0) {
-      addons.forEach(addon => {
-        addonsAmount += addon.unit_price * addon.quantity;
-      });
+      for (const addon of addons) {
+        let price = addon.unit_price;
+        if (addon.addon_id) {
+          const addonResult = await pool.query('SELECT price FROM addon_services WHERE addon_id = $1', [addon.addon_id]);
+          if (addonResult.rows.length > 0) {
+            price = parseFloat(addonResult.rows[0].price);
+          }
+        }
+        addonsAmount += price * (addon.quantity || 1);
+      }
     }
 
     // Calculate products
@@ -1092,13 +1164,49 @@ class ServiceService {
 
     const subtotal = baseAmount + addonsAmount + productsAmount;
     const discountedSubtotal = subtotal - promoDiscount;
+
+    // --- BOARDING TRAVEL FEE LOGIC FOR CALCULATION ---
+    let travelFee = 0;
+    const categoryResult = await pool.query('SELECT category_id FROM service_catalog WHERE service_id = $1', [service_id]);
+    const categoryId = categoryResult.rows[0].category_id;
+
+    if (categoryId === 4) { // Boarding Category
+      const settingsResult = await pool.query("SELECT setting_key, setting_value FROM app_settings WHERE category = 'boarding'");
+      const settings = {};
+      settingsResult.rows.forEach(r => settings[r.setting_key] = r.setting_value);
+
+      // We need address_id for travel fee, but it's not always in 'data'. 
+      // If address_id is missing, we can't calculate travel fee yet, or return a placeholder.
+      if (data.address_id) {
+        const addressResult = await pool.query('SELECT latitude, longitude FROM user_addresses WHERE address_id = $1', [data.address_id]);
+        if (addressResult.rows.length > 0) {
+          const userLat = parseFloat(addressResult.rows[0].latitude);
+          const userLng = parseFloat(addressResult.rows[0].longitude);
+          const adminLat = parseFloat(settings.boarding_admin_lat || 18.5204);
+          const adminLng = parseFloat(settings.boarding_admin_lng || 73.8567);
+          const costPerKm = parseFloat(settings.boarding_cost_per_km || 100);
+
+          const distance = haversineDistance(userLat, userLng, adminLat, adminLng);
+          
+          // Check if subscriber
+          const subCheck = await pool.query("SELECT status FROM subscriptions WHERE pet_id = $1 AND status = 'active'", [pet_id]);
+          const isSubscriber = subCheck.rows.length > 0;
+
+          if (!isSubscriber) {
+            travelFee = distance * costPerKm;
+          }
+        }
+      }
+    }
+
     const taxAmount = 0; // 0% GST as per user request
-    const totalAmount = discountedSubtotal + taxAmount;
+    const totalAmount = discountedSubtotal + taxAmount + travelFee;
 
     return {
       base_amount: parseFloat(baseAmount.toFixed(2)),
       addons_amount: parseFloat(addonsAmount.toFixed(2)),
       products_amount: parseFloat(productsAmount.toFixed(2)),
+      travel_fee: parseFloat(travelFee.toFixed(2)),
       subtotal: parseFloat(subtotal.toFixed(2)),
       promo_discount: parseFloat(promoDiscount.toFixed(2)),
       promo_details: promoDetails,

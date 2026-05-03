@@ -525,12 +525,20 @@ class SubscriptionService {
         [billing_cycle_id]
       );
 
+      if (billingCycle.rows.length === 0) {
+        throw new AppError("Invalid billing cycle", 400, "INVALID_BILLING_CYCLE");
+      }
+
       const cycle = billingCycle.rows[0];
 
       // Calculate dates
       const startDate = new Date();
       const endDate = new Date(startDate);
       endDate.setMonth(endDate.getMonth() + cycle.months);
+
+      const isInstallmentPlan = cycle.cycle_code === 'yearly_installments';
+      const totalInstallments = isInstallmentPlan ? 3 : 1;
+      const installmentAmount = pricing.final_price / totalInstallments;
 
       const subscriptionId = uuidv4();
 
@@ -563,6 +571,21 @@ class SubscriptionService {
         promo_code || null,
         true
       ]);
+
+      // If installment plan, initialize installments
+      if (isInstallmentPlan) {
+        for (let i = 1; i <= totalInstallments; i++) {
+          const dueDate = new Date(startDate);
+          dueDate.setMonth(dueDate.getMonth() + (i - 1) * 4); // 0, 4, 8 months
+
+          await client.query(
+            `INSERT INTO subscription_installments (
+              subscription_id, installment_number, amount, due_date, status
+            ) VALUES ($1, $2, $3, $4, $5)`,
+            [subscriptionId, i, installmentAmount, dueDate, i === 1 ? 'paid' : 'pending']
+          );
+        }
+      }
 
       // Initialize entitlements
       await this.initializeEntitlements(
@@ -598,6 +621,27 @@ class SubscriptionService {
         ) VALUES ($1, 'created', $2, $3, $4, $5, $6)`,
         [subscriptionId, tier_id, billing_cycle_id, pricing.final_price, userId, startDate]
       );
+
+      // --- RAZORPAY SUBSCRIPTION INTEGRATION ---
+      let gatewaySubscription = null;
+      if (cycle.cycle_code === 'monthly' || isInstallmentPlan) {
+        gatewaySubscription = await paymentService.createRazorpaySubscription({
+          subscription_id: subscriptionId,
+          user_id: userId,
+          pet_name: pet.name,
+          tier_name: pricing.tier_name,
+          cycle_name: cycle.cycle_name,
+          final_price: pricing.final_price,
+          total_installments: isInstallmentPlan ? 3 : 12,
+          interval: isInstallmentPlan ? 4 : 1
+        });
+
+        // Update subscription with gateway details
+        await client.query(
+          `UPDATE subscriptions SET gateway_subscription_id = $1 WHERE subscription_id = $2`,
+          [gatewaySubscription.gateway_subscription_id, subscriptionId]
+        );
+      }
 
       // GENERATE INVOICE
       await paymentService.createInvoice({
@@ -1170,7 +1214,7 @@ class SubscriptionService {
   let basePrice = parseFloat(tierResult.rows[0].base_price);
 
   // Apply billing cycle multiplier
-  if (cycle.months === 12) {
+  if (cycle.months === 12 || cycle.cycle_code === 'yearly_installments') {
     basePrice = basePrice * 12;
   }
 

@@ -423,6 +423,16 @@ class PaymentController {
           await this._handleRefundProcessed(eventPayload.refund.entity);
           break;
 
+        case 'subscription.charged':
+          // Handle subscription installment payment
+          await this._handleSubscriptionCharged(eventPayload.subscription.entity, eventPayload.payment.entity);
+          break;
+
+        case 'subscription.authenticated':
+          // Handle subscription authentication (first payment)
+          await this._handleSubscriptionAuthenticated(eventPayload.subscription.entity);
+          break;
+
         default:
           console.log('Unhandled webhook event:', event);
       }
@@ -480,6 +490,57 @@ class PaymentController {
        SET status = 'processed', processed_at = NOW() 
        WHERE gateway_refund_id = $1`,
       [refundEntity.id]
+    );
+  }
+
+  async _handleSubscriptionCharged(subscriptionEntity, paymentEntity) {
+    const { pool } = require('../config/database');
+    
+    // Find our internal subscription
+    const subResult = await pool.query(
+      'SELECT subscription_id FROM subscriptions WHERE gateway_subscription_id = $1',
+      [subscriptionEntity.id]
+    );
+
+    if (subResult.rows.length > 0) {
+      const subscriptionId = subResult.rows[0].subscription_id;
+      
+      // Update next pending installment
+      await pool.query(
+        `UPDATE subscription_installments 
+         SET status = 'paid', paid_at = NOW(), transaction_id = $1
+         WHERE subscription_id = $2 AND status = 'pending'
+         AND installment_id = (
+           SELECT installment_id FROM subscription_installments 
+           WHERE subscription_id = $2 AND status = 'pending' 
+           ORDER BY installment_number ASC LIMIT 1
+         )`,
+        [paymentEntity.id, subscriptionId]
+      );
+
+      // Log payment
+      await pool.query(
+        `INSERT INTO payments (
+          payment_id, user_id, amount, currency, status, 
+          payment_gateway, transaction_id, gateway_order_id, 
+          payment_date, payment_method_used
+        ) SELECT 
+          gen_random_uuid(), user_id, $1, 'INR', 'success', 
+          'razorpay', $2, $3, NOW(), $4
+          FROM subscriptions WHERE subscription_id = $5`,
+        [paymentEntity.amount / 100, paymentEntity.id, paymentEntity.order_id, paymentEntity.method, subscriptionId]
+      );
+    }
+  }
+
+  async _handleSubscriptionAuthenticated(subscriptionEntity) {
+    const { pool } = require('../config/database');
+    
+    await pool.query(
+      `UPDATE subscriptions 
+       SET status = 'active', updated_at = NOW() 
+       WHERE gateway_subscription_id = $1`,
+      [subscriptionEntity.id]
     );
   }
 }
