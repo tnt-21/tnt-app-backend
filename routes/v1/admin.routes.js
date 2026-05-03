@@ -172,4 +172,8 @@ router.post('/admin-users', adminController.createAdminUser);
 router.put('/admin-users/:id', adminController.updateAdminUser);
 router.patch('/admin-users/:id/status', adminController.toggleAdminUserStatus);
 
+// Add-on Services Management
+const addonRoutes = require('./addon.routes');
+router.use('/addons', addonRoutes);
+
 module.exports = router;
