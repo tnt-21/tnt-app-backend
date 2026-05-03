@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const addonController = require('../../controllers/addon.controller');
-const { protect, authorize } = require('../../middleware/auth');
+const { authenticate, authorize } = require('../../middlewares/auth.middleware');
 
 // All addon routes are admin-protected for now
-router.use(protect);
+router.use(authenticate);
 router.use(authorize('admin', 'super_admin'));
 
 router.get('/', addonController.getAllAddons);
